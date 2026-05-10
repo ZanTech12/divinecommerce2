@@ -1,15 +1,10 @@
 // utils/sendEmail.js
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import SiteSettings from '../models/SiteSettings.js'; 
 import Order from '../models/Order.js'; // ✅ Import Order model to check recent orders
 
-const transporter = nodemailer.createTransport({
-  service: 'Gmail', 
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+// ✅ Replaced Nodemailer SMTP with Resend HTTP API (Works flawlessly on Vercel)
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ✅ 1. EMAIL FOR THE CUSTOMER
 export const sendCartReminderToUser = async (user, cartItems, totalPrice) => {
@@ -77,12 +72,14 @@ export const sendCartReminderToUser = async (user, cartItems, totalPrice) => {
     </div>
   `;
 
-  await transporter.sendMail({
-    from: `"${storeName}" <${process.env.EMAIL_USER}>`, 
+  const { error } = await resend.emails.send({
+    from: `"${storeName}" <${process.env.EMAIL_FROM || 'onboarding@resend.dev'}>`, 
     to: customerEmail,
     subject: "Still thinking about it? Complete your purchase! 🛒",
     html: htmlBody,
   });
+
+  if (error) console.error('❌ Resend Error:', error);
 };
 
 // ✅ 2. EMAIL FOR THE ADMIN
@@ -161,12 +158,14 @@ export const sendAbandonedCartAlertToAdmin = async (user, cartItems, totalPrice)
     </div>
   `;
 
-  await transporter.sendMail({
-    from: `"${storeName} System" <${process.env.EMAIL_USER}>`, 
+  const { error } = await resend.emails.send({
+    from: `"${storeName} System" <${process.env.EMAIL_FROM || 'onboarding@resend.dev'}>`, 
     to: adminEmail,
     subject: `🛒 Abandoned Cart Alert: ${user.name} (₦${totalPrice.toLocaleString()})`,
     html: htmlBody,
   });
+
+  if (error) console.error('❌ Resend Error:', error);
 };
 
 // ✅ 3. ORDER CONFIRMATION EMAIL FOR THE CUSTOMER
@@ -286,10 +285,12 @@ export const sendOrderConfirmationEmail = async (order, user) => {
     </div>
   `;
 
-  await transporter.sendMail({
-    from: `"${storeName}" <${process.env.EMAIL_USER}>`,
+  const { error } = await resend.emails.send({
+    from: `"${storeName}" <${process.env.EMAIL_FROM || 'onboarding@resend.dev'}>`,
     to: customerEmail,
     subject: `✅ Order Confirmed — ${order.orderNumber}`,
     html: htmlBody,
   });
+
+  if (error) console.error('❌ Resend Error:', error);
 };

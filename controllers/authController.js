@@ -1,25 +1,24 @@
-// controllers/authController.js (or wherever you have this)
+// controllers/authController.js
 import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend'; // ✅ Replaced nodemailer with resend
 
-// ✅ Nodemailer Setup (Added pooling to handle rapid resend requests)
-const transporter = nodemailer.createTransport({
-  service: 'Gmail', 
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  pool: true,
-  maxConnections: 1,
-  maxMessages: 5,
-  rateLimit: 1
-});
+// ✅ Resend Setup (Works perfectly on Render/Vercel)
+const resend = process.env.RESEND_API_KEY 
+  ? new Resend(process.env.RESEND_API_KEY)
+  : null;
 
-// ✅ Helper: Send OTP Email (Added uniqueId to bypass Gmail duplicate filters)
+if (!resend) {
+  console.error('⚠️ WARNING: RESEND_API_KEY is missing. OTP emails will not be sent.');
+}
+
+// ✅ Helper: Send OTP Email
 const sendOTPEmail = async (email, name, otp, uniqueId = '') => {
-  await transporter.sendMail({
-    from: `"${process.env.STORE_NAME || 'MallHub'}" <${process.env.EMAIL_USER}>`,
+  if (!resend) throw new Error('RESEND_API_KEY is not configured');
+
+  const { error } = await resend.emails.send({
+    // ⚠️ IMPORTANT: You MUST use onboarding@resend.dev until you verify your own domain in Resend!
+    from: `"${process.env.STORE_NAME || 'MallHub'}" <onboarding@resend.dev>`,
     to: email,
     // uniqueId makes the subject slightly different so Gmail doesn't block the resend
     subject: `Your Email Verification Code ${uniqueId ? `[Ref: ${uniqueId}]` : ''}`,
@@ -35,6 +34,8 @@ const sendOTPEmail = async (email, name, otp, uniqueId = '') => {
       </div>
     `,
   });
+
+  if (error) throw error; // Let the controller's catch block handle it
 };
 
 // ✅ Helper: Generate JWT
@@ -74,6 +75,7 @@ export const registerUser = async (req, res) => {
       await sendOTPEmail(email, name, otp);
     } catch (emailError) {
       console.error('⚠️ Failed to send OTP email:', emailError.message);
+      // We don't throw here so the user still gets registered successfully
     }
     
     res.status(201).json({

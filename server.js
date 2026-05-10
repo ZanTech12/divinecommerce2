@@ -1,5 +1,6 @@
 // ✅ THIS IMPORT MUST BE THE ABSOLUTE FIRST LINE
-import './setEnv.js';
+import dotenv from 'dotenv';
+dotenv.config();
 
 import express from 'express';
 import cors from 'cors';
@@ -19,7 +20,7 @@ const app = express();
 // ✅ UPDATED CORS CONFIGURATION
 // Replace 192.168.1.15 with the actual local IP address of your computer
 const allowedOrigins = [
-  'http://172.29.136.57:3000',//ing on your computer
+  'http://172.29.136.57:3000', // running on your computer
   'http://192.168.1.15:5173/api',   // For testing on your phone
   'http://localhost:3000'
 ];
@@ -59,10 +60,25 @@ async function seedDemoUsers() {
   ];
 
   for (const acc of demoAccounts) {
-    const exists = await User.findOne({ email: acc.email });
-    if (!exists) {
-      await User.create(acc);
-      console.log(`  🌱 Seeded: ${acc.email} (${acc.role})`);
+    try {
+      // ✅ FIX: Check if EITHER the email OR the phone already exists
+      const exists = await User.findOne({ 
+        $or: [{ email: acc.email }, { phone: acc.phone }] 
+      });
+      
+      if (!exists) {
+        await User.create(acc);
+        console.log(`  🌱 Seeded: ${acc.email} (${acc.role})`);
+      } else {
+        // Optional: Log why it was skipped
+        if (exists.email === acc.email) {
+          console.log(`  ⏭️ Skipped: ${acc.email} already exists`);
+        } else if (exists.phone === acc.phone) {
+          console.log(`  ⏭️ Skipped: Phone number ${acc.phone} already exists`);
+        }
+      }
+    } catch (error) {
+      console.error(`  ❌ Error seeding ${acc.email}:`, error.message);
     }
   }
 }

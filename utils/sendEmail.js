@@ -6,6 +6,12 @@ import Order from '../models/Order.js'; // ✅ Import Order model to check recen
 // ✅ Replaced Nodemailer SMTP with Resend HTTP API (Works flawlessly on Vercel)
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// ✅ Helper: Fetch store name from SiteSettings (single source of truth)
+const getStoreName = async () => {
+  const settings = await SiteSettings.getSettings();
+  return settings?.companyName || 'Our Store';
+};
+
 // ✅ 1. EMAIL FOR THE CUSTOMER
 export const sendCartReminderToUser = async (user, cartItems, totalPrice) => {
   const customerEmail = user?.email; 
@@ -30,9 +36,8 @@ export const sendCartReminderToUser = async (user, cartItems, totalPrice) => {
     return;
   }
 
-  // ✅ Fetch store settings from DB
-  const settings = await SiteSettings.getSettings();
-  const storeName = settings?.companyName || 'MallHub'; 
+  // ✅ Fetch store name from DB (same source as Home.jsx)
+  const storeName = await getStoreName();
 
   const itemsList = cartItems.map(item => `
     <tr>
@@ -106,9 +111,8 @@ export const sendAbandonedCartAlertToAdmin = async (user, cartItems, totalPrice)
     return;
   }
 
-  // ✅ Fetch store settings from DB
-  const settings = await SiteSettings.getSettings();
-  const storeName = settings?.companyName || 'MallHub'; 
+  // ✅ Fetch store name from DB (same source as Home.jsx)
+  const storeName = await getStoreName();
 
   const itemsList = cartItems.map(item => `
     <tr>
@@ -178,9 +182,8 @@ export const sendOrderConfirmationEmail = async (order, user) => {
     return;
   }
 
-  // ✅ Fetch store settings from DB
-  const settings = await SiteSettings.getSettings();
-  const storeName = settings?.companyName || 'MallHub'; 
+  // ✅ Fetch store name from DB (same source as Home.jsx)
+  const storeName = await getStoreName();
 
   const itemsList = order.items.map(item => `
     <tr>

@@ -18,11 +18,12 @@ import userRoutes from './routes/userRoutes.js';
 const app = express();
 
 // ✅ UPDATED CORS CONFIGURATION
-// Replace 192.168.1.15 with the actual local IP address of your computer
 const allowedOrigins = [
-  'http://172.29.136.57:3000', // running on your computer
-  'http://192.168.1.15:5173/api',   // For testing on your phone
-  'http://localhost:3000'
+  'http://172.29.136.57:3000',      // running on your computer
+  'http://192.168.1.15:5173',       // ✅ FIX: Removed /api from the end
+  'http://localhost:3000',
+  'http://localhost:5173',           // Standard Vite local port added
+  'https://ecommerce-indol-psi.vercel.app' // Your main production URL
 ];
 
 app.use(cors({
@@ -30,7 +31,8 @@ app.use(cors({
     // Allow requests with no origin (like mobile apps, Postman, or curl)
     if (!origin) return callback(null, true);
     
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    // Check if origin is in our list OR if it's a Vercel preview deployment
+    if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
       // Origin is allowed
       callback(null, true);
     } else {

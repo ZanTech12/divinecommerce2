@@ -7,13 +7,23 @@ const router = express.Router();
 // GET all products (public)
 router.get('/', async (req, res) => {
   try {
-    const { category, featured, newArrival, flashSale, search, sort, limit, page } = req.query;
+    const { category, subcategory, featured, newArrival, flashSale, search, sort, limit, page } = req.query;
     let filter = { isActive: true };
 
-    if (category) filter.category = category;
+    // Case-insensitive category matching so "phones" matches "Phones"
+    if (category) {
+      filter.category = { $regex: new RegExp(`^${category}$`, 'i') };
+    }
+
+    // Add subcategory support in case you use it in the future
+    if (subcategory) {
+      filter.subcategory = { $regex: new RegExp(`^${subcategory}$`, 'i') };
+    }
+
     if (featured === 'true') filter.isFeatured = true;
     if (newArrival === 'true') filter.isNewArrival = true;
     if (flashSale === 'true') filter.isFlashSale = true;
+    
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -31,7 +41,12 @@ router.get('/', async (req, res) => {
     if (sort === 'newest') sortOption = { createdAt: -1 };
 
     const pageNum = parseInt(page) || 1;
-    const limitNum = parseInt(limit) || 50;
+    
+    // FIX: Default limit set to 0. In MongoDB, a limit of 0 means NO LIMIT.
+    // This ensures the Home page gets ALL products to display in categories, 
+    // rather than cutting off at 50.
+    const limitNum = parseInt(limit) || 0; 
+    
     const skip = (pageNum - 1) * limitNum;
 
     const products = await Product.find(filter)

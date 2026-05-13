@@ -10,12 +10,10 @@ router.get('/', async (req, res) => {
     const { category, subcategory, featured, newArrival, flashSale, search, sort, limit, page } = req.query;
     let filter = { isActive: true };
 
-    // Case-insensitive category matching so "phones" matches "Phones"
     if (category) {
       filter.category = { $regex: new RegExp(`^${category}$`, 'i') };
     }
 
-    // Add subcategory support in case you use it in the future
     if (subcategory) {
       filter.subcategory = { $regex: new RegExp(`^${subcategory}$`, 'i') };
     }
@@ -41,12 +39,7 @@ router.get('/', async (req, res) => {
     if (sort === 'newest') sortOption = { createdAt: -1 };
 
     const pageNum = parseInt(page) || 1;
-    
-    // FIX: Default limit set to 0. In MongoDB, a limit of 0 means NO LIMIT.
-    // This ensures the Home page gets ALL products to display in categories, 
-    // rather than cutting off at 50.
     const limitNum = parseInt(limit) || 0; 
-    
     const skip = (pageNum - 1) * limitNum;
 
     const products = await Product.find(filter)
@@ -62,7 +55,45 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET products grouped by category (public)
+// Returns an array of objects: [{ _id: "Electronics", products: [...] }, ...]
+router.get('/grouped', async (req, res) => {
+  try {
+    const groupedProducts = await Product.aggregate([
+      { $match: { isActive: true } },
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: "$category",
+          products: { $push: "$$ROOT" }
+        }
+      },
+      { $sort: { _id: 1 } } // Sort categories alphabetically
+    ]);
+
+    res.json(groupedProducts);
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch grouped products', error: error.message });
+  }
+});
+
+// GET products by category name (public)
+// Usage: /api/products/category/Phones
+router.get('/category/:categoryName', async (req, res) => {
+  try {
+    const products = await Product.find({
+      isActive: true,
+      category: { $regex: new RegExp(`^${req.params.categoryName}$`, 'i') }
+    }).sort({ createdAt: -1 });
+
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch products by category', error: error.message });
+  }
+});
+
 // GET single product (public)
+// MUST be after /grouped and /category/:categoryName to avoid route conflicts
 router.get('/:id', async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);

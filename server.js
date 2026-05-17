@@ -1,5 +1,6 @@
 // ✅ THIS IMPORT MUST BE THE ABSOLUTE FIRST LINE
-import './setEnv.js'; 
+import dotenv from 'dotenv';
+dotenv.config();
 
 import express from 'express';
 import cors from 'cors';

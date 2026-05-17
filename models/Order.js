@@ -51,7 +51,25 @@ const orderSchema = new Schema({
   trackingNumber: { type: String, uppercase: true, sparse: true },
   estimatedDelivery: { type: Date },
   deliveredAt: { type: Date },
-  
+
+  coinsCredited: {
+  type: Boolean,
+  default: false,
+},
+
+coinsUsed: {
+  type: Number,
+  default: 0,
+},
+coinDiscount: {
+  type: Number,
+  default: 0,
+},
+amountPaid: {
+  type: Number,
+  default: 0,
+},
+
   // Metadata
   cancelReason: { type: String },
   notes: { type: String },

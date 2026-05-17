@@ -1,6 +1,5 @@
 // ✅ THIS IMPORT MUST BE THE ABSOLUTE FIRST LINE
-import dotenv from 'dotenv';
-dotenv.config();
+import './setEnv.js'; 
 
 import express from 'express';
 import cors from 'cors';
@@ -14,8 +13,13 @@ import User from './models/User.js';
 import cartRoutes from './routes/cartRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
 import userRoutes from './routes/userRoutes.js';
+import messageRoutes from './routes/messageRoutes.js';
+import inviteRoutes from './routes/inviteRoutes.js';
+import paymentRoutes from "./routes/paymentRoutes.js";
+
 
 const app = express();
+
 
 // ✅ UPDATED CORS CONFIGURATION
 const allowedOrigins = [
@@ -56,6 +60,9 @@ app.use('/api/products', productRoutes);
 app.use('/api/cart', cartRoutes);
 app.use("/api/orders", orderRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/messages', messageRoutes);
+app.use('/api/invites', inviteRoutes);
+app.use("/api/payments", paymentRoutes);
 
 // Seed demo users
 async function seedDemoUsers() {

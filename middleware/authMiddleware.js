@@ -30,12 +30,10 @@ export const protect = (req, res, next) => {
 
 export const isAdmin = async (req, res, next) => {
   try {
-    // ✅ ADDED SAFETY CHECK: Prevent crash if protect middleware was skipped
     if (!req.user || !req.user._id) {
       return res.status(401).json({ success: false, message: 'Not authorized, please log in' });
     }
 
-    // Re-fetch user from DB to get the latest role
     const freshUser = await User.findById(req.user._id).select('role').lean();
     
     if (!freshUser) {
@@ -54,4 +52,31 @@ export const isAdmin = async (req, res, next) => {
   }
 };
 
-export default { protect, isAdmin };
+// ✅ NEW: Engineer or Admin only
+export const isEngineer = async (req, res, next) => {
+  try {
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: 'Not authorized, please log in' });
+    }
+
+    // Re-fetch user from DB to get the latest role (same pattern as isAdmin)
+    const freshUser = await User.findById(req.user._id).select('role').lean();
+    
+    if (!freshUser) {
+      return res.status(401).json({ success: false, message: 'User not found' });
+    }
+    
+    if (freshUser.role !== 'engineer' && freshUser.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Engineer or Admin access required' });
+    }
+    
+    req.user = { ...req.user, role: freshUser.role };
+    next();
+  } catch (error) {
+    console.error('isEngineer middleware error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// ✅ UPDATED: Include isEngineer in the default export
+export default { protect, isAdmin, isEngineer };

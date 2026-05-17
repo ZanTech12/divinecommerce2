@@ -2,7 +2,7 @@
 import express from "express";
 import User from "../models/User.js";
 import Cart from "../models/Cart.js";
-import Order from "../models/Order.js"; // ✅ ADD THIS IMPORT
+import Order from "../models/Order.js";
 import { protect, isAdmin } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
@@ -10,7 +10,7 @@ const router = express.Router();
 // GET ALL USERS (Admin only)
 router.get("/", protect, isAdmin, async (req, res) => {
   try {
-    const { search, page = 1, limit = 20 } = req.query;
+    const { search, role, page = 1, limit = 20 } = req.query;
     const query = {};
 
     if (search) {
@@ -19,6 +19,11 @@ router.get("/", protect, isAdmin, async (req, res) => {
         { email: { $regex: search, $options: "i" } },
         { phone: { $regex: search, $options: "i" } },
       ];
+    }
+
+    // ✅ NEW: Filter by role (user, admin, engineer)
+    if (role) {
+      query.role = role;
     }
 
     const total = await User.countDocuments(query);
@@ -94,10 +99,11 @@ router.put("/:id", protect, isAdmin, async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found." });
     }
 
+    // ✅ UPDATED: Role-agnostic self-demotion check
     if (user._id.toString() === req.user._id.toString() && role && role !== user.role) {
       return res.status(400).json({
         success: false,
-        message: "You cannot change your own admin role."
+        message: "You cannot change your own role."
       });
     }
 
@@ -118,7 +124,17 @@ router.put("/:id", protect, isAdmin, async (req, res) => {
     }
 
     if (name) user.name = name;
-    if (role) user.role = role;
+    
+    // ✅ UPDATED: Validate role against new enum values
+    if (role) {
+      if (!["user", "admin", "engineer"].includes(role)) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Invalid role. Must be user, admin, or engineer." 
+        });
+      }
+      user.role = role;
+    }
 
     if (password) {
       if (password.length < 6) {
@@ -157,10 +173,11 @@ router.delete("/:id", protect, isAdmin, async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found." });
     }
 
+    // ✅ UPDATED: Role-agnostic self-deletion check
     if (userToDelete._id.toString() === req.user._id.toString()) {
       return res.status(400).json({
         success: false,
-        message: "You cannot delete your own admin account."
+        message: "You cannot delete your own account."
       });
     }
 

@@ -5,8 +5,9 @@ const productSchema = new mongoose.Schema({
   description: { type: String, required: true },
   price: { type: Number, required: true },
   discountPrice: { type: Number },
+  engineeringPrice: { type: Number, default: null, select: false }, // ✅ NEW: Internal cost price (hidden from public by default)
   category: { type: String, required: true },
-  image: { type: String, required: true },
+  image: { type: String, default: "" },
   images: [{ type: String }],
   countInStock: { type: Number, required: true, default: 0 },
   rating: { type: Number, default: 0 },
@@ -20,4 +21,6 @@ const productSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
 }, { timestamps: true });
 
-export default mongoose.model('Product', productSchema);
+const Product = mongoose.model('Product', productSchema);
+
+export default Product;

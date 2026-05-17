@@ -33,7 +33,7 @@ const userSchema = new mongoose.Schema({
   },
   role: { 
     type: String, 
-    enum: ["user", "admin"], 
+    enum: ["user", "admin", "engineer"], 
     default: "user" 
   },
   isVerified: { 
@@ -47,7 +47,11 @@ const userSchema = new mongoose.Schema({
   otpExpires: { 
     type: Date,
     select: false 
-  }
+  },
+  coins: {
+     type: Number, 
+     default: 0 
+    },
 }, { 
   timestamps: true 
 });

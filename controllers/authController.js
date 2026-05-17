@@ -1,9 +1,10 @@
 // controllers/authController.js
 import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
-import { Resend } from 'resend'; // ✅ Replaced nodemailer with resend
+import { Resend } from 'resend';
+import InviteToken from '../models/InviteToken.js'; // ✅ Import new model
 
-// ✅ Resend Setup (Works perfectly on Render/Vercel)
+// ✅ Resend Setup
 const resend = process.env.RESEND_API_KEY 
   ? new Resend(process.env.RESEND_API_KEY)
   : null;
@@ -17,10 +18,8 @@ const sendOTPEmail = async (email, name, otp, uniqueId = '') => {
   if (!resend) throw new Error('RESEND_API_KEY is not configured');
 
   const { error } = await resend.emails.send({
-    // ⚠️ IMPORTANT: You MUST use onboarding@resend.dev until you verify your own domain in Resend!
     from: `"${process.env.STORE_NAME || 'MallHub'}" <onboarding@resend.dev>`,
     to: email,
-    // uniqueId makes the subject slightly different so Gmail doesn't block the resend
     subject: `Your Email Verification Code ${uniqueId ? `[Ref: ${uniqueId}]` : ''}`,
     html: `
       <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
@@ -35,7 +34,7 @@ const sendOTPEmail = async (email, name, otp, uniqueId = '') => {
     `,
   });
 
-  if (error) throw error; // Let the controller's catch block handle it
+  if (error) throw error;
 };
 
 // ✅ Helper: Generate JWT
@@ -69,13 +68,12 @@ export const registerUser = async (req, res) => {
       otpExpires
     });
 
-    console.log(`🔑 OTP for ${email}: ${otp}`); // Show in terminal for testing
+    console.log(`🔑 OTP for ${email}: ${otp}`);
 
     try {
       await sendOTPEmail(email, name, otp);
     } catch (emailError) {
       console.error('⚠️ Failed to send OTP email:', emailError.message);
-      // We don't throw here so the user still gets registered successfully
     }
     
     res.status(201).json({
@@ -96,7 +94,6 @@ export const registerUser = async (req, res) => {
 export const verifyOtp = async (req, res) => {
   const { email, otp } = req.body;
   try {
-    // ⚠️ CRITICAL: .select('+otp +otpExpires') is required because they are set to `select: false` in User.js
     const user = await User.findOne({ email }).select('+otp +otpExpires');
     
     if (!user) return res.status(404).json({ message: 'User not found' });
@@ -127,7 +124,6 @@ export const verifyOtp = async (req, res) => {
 export const resendOtp = async (req, res) => {
   const { email } = req.body;
   try {
-    // ⚠️ CRITICAL: .select('+otp +otpExpires') is required to overwrite the hidden fields
     const user = await User.findOne({ email }).select('+otp +otpExpires');
     
     if (!user) return res.status(404).json({ message: 'User not found' });
@@ -136,18 +132,15 @@ export const resendOtp = async (req, res) => {
       return res.status(400).json({ message: 'Email is already verified.' });
     }
 
-    // Generate NEW 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Update user in database
     user.otp = otp;
     user.otpExpires = otpExpires;
     await user.save();
 
-    console.log(`🔑 New OTP for ${email}: ${otp}`); // Show in terminal
+    console.log(`🔑 New OTP for ${email}: ${otp}`);
 
-    // Generate a short unique ID to force Gmail to see this as a NEW email, not a duplicate
     const uniqueId = Date.now().toString().slice(-6);
 
     try {
@@ -169,7 +162,6 @@ export const resendOtp = async (req, res) => {
 export const loginUser = async (req, res) => {
   const { email, password } = req.body;
   try {
-    // We don't need .select('+password') here because password is NOT set to select: false in your schema
     const user = await User.findOne({ email });
     
     if (user && (await user.matchPassword(password))) {
@@ -196,7 +188,6 @@ export const loginUser = async (req, res) => {
 // ==========================================
 export const getProfile = async (req, res) => {
   try {
-    // OTP and Password are automatically hidden here (select: false works its magic)
     const user = await User.findById(req.user._id).select("-password");
     res.json({ 
       _id: user._id, name: user.name, email: user.email, 
@@ -205,5 +196,125 @@ export const getProfile = async (req, res) => {
   } catch (error) {
     console.error(error.stack);
     res.status(500).json({ message: error.message });
+  }
+};
+
+// ==========================================
+// 6. REGISTER ENGINEER ✅ UPDATED
+// ==========================================
+export const registerEngineer = async (req, res) => {
+  const { name, email, phone, password, inviteCode } = req.body;
+
+  try {
+    // ✅ Step 1: Validate invite code from DATABASE instead of .env
+    if (!inviteCode) {
+      return res.status(400).json({
+        success: false,
+        message: "Engineer invite code is required.",
+      });
+    }
+
+    const tokenRecord = await InviteToken.findOne({ token: inviteCode, isActive: true });
+
+    if (!tokenRecord) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or already used invite code. Contact admin for access.",
+      });
+    }
+
+    // ✅ Step 2: Check if token has expired
+    if (new Date() > new Date(tokenRecord.expiresAt)) {
+      tokenRecord.isActive = false; // Soft delete expired token
+      await tokenRecord.save();
+      
+      return res.status(400).json({
+        success: false,
+        message: "This invite code has expired. Please request a new one from admin.",
+      });
+    }
+
+    // ✅ Step 3: Check if email already exists
+    const emailExists = await User.findOne({ email: email.toLowerCase() });
+    if (emailExists) {
+      return res.status(400).json({
+        success: false,
+        message: "An account with this email already exists.",
+      });
+    }
+
+    // ✅ Step 4: Check if phone already exists
+    const phoneExists = await User.findOne({ phone });
+    if (phoneExists) {
+      return res.status(400).json({
+        success: false,
+        message: "An account with this phone number already exists.",
+      });
+    }
+
+    // ✅ Step 5: Validate password length
+    if (!password || password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters.",
+      });
+    }
+
+    // ✅ Step 6: Generate OTP for email verification
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+
+    // ✅ Step 7: Create user with engineer role
+    const user = await User.create({
+      name,
+      email: email.toLowerCase(),
+      phone,
+      password,
+      role: "engineer",
+      isVerified: false,
+      otp,
+      otpExpires,
+    });
+
+    console.log(`🔧 Engineer OTP for ${email}: ${otp}`);
+
+    // ✅ Step 8: Mark invite token as used
+    tokenRecord.isActive = false;
+    tokenRecord.usedBy = user._id;
+    await tokenRecord.save();
+
+    // ✅ Step 9: Send OTP email (same as normal register)
+    try {
+      await sendOTPEmail(email, name, otp);
+    } catch (emailError) {
+      console.error('⚠️ Failed to send OTP email:', emailError.message);
+    }
+
+    // ✅ Step 10: Return success with token
+    res.status(201).json({
+      success: true,
+      message: "Engineer account created! Please verify your email.",
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        isVerified: user.isVerified,
+      },
+      token: generateToken(user),
+    });
+  } catch (error) {
+    console.error("Engineer register error:", error.stack);
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Registration failed. Please try again.",
+    });
   }
 };

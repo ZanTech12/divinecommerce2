@@ -9,6 +9,7 @@ const cartItemSchema = new mongoose.Schema({
   name: { type: String, required: true },
   image: { type: String, required: true },
   price: { type: Number, required: true },
+  discountPrice: { type: Number, default: 0 }, // ✅ ADDED DISCOUNT PRICE
   quantity: { type: Number, required: true, default: 1 },
   addedAt: { 
     type: Date, 

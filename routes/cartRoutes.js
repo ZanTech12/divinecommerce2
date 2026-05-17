@@ -1,7 +1,7 @@
 import express from 'express';
 import Cart from '../models/Cart.js';
 import Product from '../models/Product.js';
-import User from '../models/User.js'; // ✅ ADD THIS IMPORT
+import User from '../models/User.js'; 
 import { protect } from '../middleware/authMiddleware.js';
 import { sendCartReminderToUser, sendAbandonedCartAlertToAdmin } from '../utils/sendEmail.js';
 
@@ -14,7 +14,13 @@ const cartEmailTimers = new Map();
 const formatCartResponse = (cart) => {
   if (!cart) return { cartItems: [], totalPrice: 0, totalQty: 0 };
   const availableItems = cart.cartItems.filter(item => item.product);
-  const totalPrice = availableItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+  
+  // ✅ UPDATED: Calculate total using discountPrice if it exists
+  const totalPrice = availableItems.reduce((acc, item) => {
+    const effectivePrice = item.discountPrice && item.discountPrice < item.price ? item.discountPrice : item.price;
+    return acc + (effectivePrice * item.quantity);
+  }, 0);
+  
   const totalQty = availableItems.reduce((acc, item) => acc + item.quantity, 0);
   return { cartItems: availableItems, totalPrice, totalQty };
 };
@@ -33,6 +39,11 @@ router.get('/', protect, async (req, res) => {
 router.post('/', protect, async (req, res) => {
   const { productId, quantity = 1 } = req.body;
 
+  // ✅ ADDED: Safety check to prevent 404s from undefined IDs
+  if (!productId) {
+    return res.status(400).json({ message: 'Product ID is required' });
+  }
+
   try {
     const product = await Product.findById(productId);
     if (!product) return res.status(404).json({ message: 'Product not found' });
@@ -43,7 +54,7 @@ router.post('/', protect, async (req, res) => {
     if (!cart) {
       cart = await Cart.create({
         user: req.user._id,
-        cartItems: [{ product: productId, name: product.name, image: product.image, price: product.price, quantity, addedAt: new Date() }]
+        cartItems: [{ product: productId, name: product.name, image: product.image, price: product.price, discountPrice: product.discountPrice || 0, quantity, addedAt: new Date() }]
       });
     } else {
       const existingItemIndex = cart.cartItems.findIndex(item => item.product.toString() === productId);
@@ -52,7 +63,7 @@ router.post('/', protect, async (req, res) => {
         if (product.countInStock < newQty) return res.status(400).json({ message: 'Insufficient stock' });
         cart.cartItems[existingItemIndex].quantity = newQty;
       } else {
-        cart.cartItems.push({ product: productId, name: product.name, image: product.image, price: product.price, quantity, addedAt: new Date() });
+        cart.cartItems.push({ product: productId, name: product.name, image: product.image, price: product.price, discountPrice: product.discountPrice || 0, quantity, addedAt: new Date() });
       }
       await cart.save();
     }
@@ -60,7 +71,7 @@ router.post('/', protect, async (req, res) => {
     // ==========================================
     // ✅ FIXED TIMER LOGIC
     // ==========================================
-    const userIdStr = req.user._id.toString(); // Save the ID string safely
+    const userIdStr = req.user._id.toString();
 
     if (cartEmailTimers.has(userIdStr)) {
       clearTimeout(cartEmailTimers.get(userIdStr));
@@ -68,15 +79,12 @@ router.post('/', protect, async (req, res) => {
 
     const timerId = setTimeout(async () => {
       try {
-        // ✅ FIX: Re-fetch the user from the database because req.user dies when the request ends!
         const freshUser = await User.findById(userIdStr);
-        
         const latestCart = await Cart.findOne({ user: userIdStr });
         
         if (freshUser && latestCart && latestCart.cartItems.length > 0) {
           const totalPrice = latestCart.cartItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
           
-          // Use freshUser instead of req.user
           await Promise.all([
             sendCartReminderToUser(freshUser, latestCart.cartItems, totalPrice),
             sendAbandonedCartAlertToAdmin(freshUser, latestCart.cartItems, totalPrice)
@@ -102,7 +110,6 @@ router.post('/', protect, async (req, res) => {
   }
 });
 
-// ... [Keep your PUT, DELETE, and CLEAR routes exactly the same] ...
 // @route   PUT /api/cart/:productId
 router.put('/:productId', protect, async (req, res) => {
   const { quantity } = req.body;
@@ -111,7 +118,19 @@ router.put('/:productId', protect, async (req, res) => {
     if (!cart) return res.status(404).json({ message: 'Cart not found' });
     const itemIndex = cart.cartItems.findIndex(item => item.product.toString() === req.params.productId);
     if (itemIndex === -1) return res.status(404).json({ message: 'Item not in cart' });
-    if (quantity <= 0) { cart.cartItems.splice(itemIndex, 1); } else { cart.cartItems[itemIndex].quantity = quantity; }
+    
+    if (quantity <= 0) { 
+      cart.cartItems.splice(itemIndex, 1); 
+    } else { 
+      cart.cartItems[itemIndex].quantity = quantity;
+      
+      const currentProduct = await Product.findById(req.params.productId);
+      if (currentProduct) {
+        cart.cartItems[itemIndex].price = currentProduct.price;
+        cart.cartItems[itemIndex].discountPrice = currentProduct.discountPrice || 0;
+      }
+    }
+    
     await cart.save();
     const populatedCart = await Cart.findOne({ user: req.user._id }).populate('cartItems.product', 'countInStock');
     res.status(200).json(formatCartResponse(populatedCart));

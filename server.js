@@ -1,6 +1,7 @@
 // ✅ THIS IMPORT MUST BE THE ABSOLUTE FIRST LINE
-import dotenv from 'dotenv';
-dotenv.config();
+//import dotenv from 'dotenv';
+//dotenv.config();
+import './setEnv.js';
 
 import express from 'express';
 import cors from 'cors';
@@ -18,9 +19,24 @@ import messageRoutes from './routes/messageRoutes.js';
 import inviteRoutes from './routes/inviteRoutes.js';
 import paymentRoutes from "./routes/paymentRoutes.js";
 
+// ✅ NEW IMPORTS FOR IMAGE UPLOAD
+import multer from 'multer';
+import { v2 as cloudinary } from 'cloudinary';
+import streamifier from 'streamifier';
 
 const app = express();
 
+// ✅ CLOUDINARY CONFIGURATION
+// IMPORTANT: Replace 'YOUR_CLOUD_NAME_HERE' with your actual Cloudinary Cloud Name
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'YOUR_CLOUD_NAME_HERE', 
+  api_key: '234947822885619',
+  api_secret: 'NOJzLThTZ4Q9SQq1f0ToIdDzFRw',
+  secure: true,
+});
+
+// ✅ MULTER SETUP (Stores files in memory temporarily before uploading to Cloudinary)
+const upload = multer();
 
 // ✅ UPDATED CORS CONFIGURATION
 const allowedOrigins = [
@@ -64,6 +80,45 @@ app.use('/api/users', userRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/invites', inviteRoutes);
 app.use("/api/payments", paymentRoutes);
+
+// ✅ NEW IMAGE UPLOAD ROUTE
+// Handles up to 10 images at a time. Frontend sends files under the key "images"
+app.post('/api/upload', upload.array('images', 10), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: "No files uploaded" });
+    }
+
+    // Map through files and upload each to Cloudinary
+    const uploadPromises = req.files.map(
+      (file) =>
+        new Promise((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_stream(
+            {
+              folder: "products", // Optional: saves files in a 'products' folder in Cloudinary
+              resource_type: "image",
+            },
+            (error, result) => {
+              if (error) return reject(error);
+              resolve(result.secure_url); // Return the HTTPS URL
+            }
+          );
+
+          // Convert buffer to stream and pipe to Cloudinary
+          streamifier.createReadStream(file.buffer).pipe(uploadStream);
+        })
+    );
+
+    // Wait for all uploads to finish
+    const urls = await Promise.all(uploadPromises);
+
+    // Send the array of URLs back to the frontend
+    res.status(200).json({ urls });
+  } catch (error) {
+    console.error("Cloudinary upload error:", error);
+    res.status(500).json({ message: "Image upload failed" });
+  }
+});
 
 // Seed demo users
 async function seedDemoUsers() {

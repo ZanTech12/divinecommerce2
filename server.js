@@ -28,7 +28,7 @@ const allowedOrigins = [
   'http://192.168.1.15:5173',       // ✅ FIX: Removed /api from the end
   'http://localhost:3000',
   'http://localhost:5173',           // Standard Vite local port added
-  'https://ecommerce-indol-psi.vercel.app', // Your main production URL
+  'https://https://sulaitek1.vercel.app', // Your main production URL
   'https://afootechnology.com.ng',
   'https://www.afootechnology.com.ng',
   'www.afootechnology.com.ng'

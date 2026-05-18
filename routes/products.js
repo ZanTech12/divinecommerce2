@@ -1,8 +1,10 @@
+// routes/productRoutes.js
 import express from 'express';
 import Product from '../models/Product.js';
-import jwt from 'jsonwebtoken';            // ✅ NEW
-import User from '../models/User.js';       // ✅ NEW
-import { protect, isAdmin, isEngineer } from '../middleware/authMiddleware.js';
+import jwt from 'jsonwebtoken';            
+import User from '../models/User.js';       
+// ✅ UPDATED: Import requirePermission instead of isAdmin/isEngineer
+import { protect, requirePermission } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -104,13 +106,9 @@ router.get('/', optionalAuth, async (req, res) => {
   }
 });
 
-// ✅ GET all products WITH engineeringPrice (admin/engineer only — kept for explicit admin pages)
-router.get('/admin/all', protect, async (req, res) => {
+// ✅ GET all products WITH engineeringPrice (Admin/Engineer/SalesRep with permission — kept for explicit admin pages)
+router.get('/admin/all', protect, requirePermission('manage_products'), async (req, res) => {
   try {
-    if (!['admin', 'engineer'].includes(req.user.role)) {
-      return res.status(403).json({ message: 'Access denied' });
-    }
-
     const { search, sort, limit, page, category, featured, newArrival, flashSale, onSale } = req.query;
     let filter = {};
 
@@ -141,15 +139,17 @@ router.get('/admin/all', protect, async (req, res) => {
     const limitNum = parseInt(limit) || 0;
     const skip = (pageNum - 1) * limitNum;
 
+    // ✅ SECURITY: Even if Sales Rep accesses this route, strip engineeringPrice unless Admin/Engineer
+    const showEng = canSeeEngPrice(req.user);
+    const selectStr = showEng ? '+discountPrice +engineeringPrice' : '+discountPrice';
+
     const products = await Product.find(filter)
-      .select('+discountPrice +engineeringPrice')
+      .select(selectStr)
       .sort(sortOption)
       .skip(skip)
       .limit(limitNum);
 
-    const total = await Product.countDocuments(filter);
-
-    res.json(products);
+    res.json(showEng ? products : stripInternalFieldsArray(products));
   } catch (error) {
     res.status(500).json({ message: 'Failed to fetch products', error: error.message });
   }
@@ -215,8 +215,6 @@ router.get('/discount-prices', optionalAuth, async (req, res) => {
   try {
     const showEng = canSeeEngPrice(req.user);
 
-    // If admin/engineer, fetch products that have EITHER a discount or engineering price
-    // If public, only fetch products that have a discount price
     let filter = { isActive: true };
     
     if (showEng) {
@@ -247,7 +245,7 @@ router.get('/discount-prices', optionalAuth, async (req, res) => {
         name: obj.name,
         price: obj.price,
         discountPrice: obj.discountPrice || null,
-        engineeringPrice: showEng ? (obj.engineeringPrice || null) : undefined, // ✅ Conditionally add engineeringPrice
+        engineeringPrice: showEng ? (obj.engineeringPrice || null) : undefined, 
         discountPercent,
         image: obj.image,
         category: obj.category,
@@ -338,8 +336,8 @@ router.get('/:id', optionalAuth, async (req, res) => {
   }
 });
 
-// POST create product (admin only — accepts engineeringPrice)
-router.post('/', protect, isAdmin, async (req, res) => {
+// POST create product (Admin OR Sales Rep with permission)
+router.post('/', protect, requirePermission('manage_products'), async (req, res) => {
   try {
     const {
       name, description, price, discountPrice, engineeringPrice, category,
@@ -350,12 +348,15 @@ router.post('/', protect, isAdmin, async (req, res) => {
 
     const cleanedImages = (images || []).filter((img) => img && img.trim());
 
+    // ✅ SECURITY: Only Admin/Engineer can set the engineeringPrice via API
+    const finalEngPrice = canSeeEngPrice(req.user) && engineeringPrice ? Number(engineeringPrice) : undefined;
+
     const product = await Product.create({
       name,
       description,
       price: Number(price),
       discountPrice: discountPrice ? Number(discountPrice) : undefined,
-      engineeringPrice: engineeringPrice ? Number(engineeringPrice) : undefined,
+      engineeringPrice: finalEngPrice,
       category,
       images: cleanedImages,
       image: cleanedImages[0] || "",
@@ -374,8 +375,8 @@ router.post('/', protect, isAdmin, async (req, res) => {
   }
 });
 
-// PUT update product (admin only — accepts engineeringPrice)
-router.put('/:id', protect, isAdmin, async (req, res) => {
+// PUT update product (Admin OR Sales Rep with permission)
+router.put('/:id', protect, requirePermission('manage_products'), async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
@@ -392,7 +393,8 @@ router.put('/:id', protect, isAdmin, async (req, res) => {
       ...(description && { description }),
       ...(price !== undefined && { price: Number(price) }),
       ...(discountPrice !== undefined && { discountPrice: discountPrice ? Number(discountPrice) : undefined }),
-      ...(engineeringPrice !== undefined && { engineeringPrice: engineeringPrice ? Number(engineeringPrice) : undefined }),
+      // ✅ SECURITY: Only Admin/Engineer can modify the engineeringPrice via API
+      ...(engineeringPrice !== undefined && canSeeEngPrice(req.user) && { engineeringPrice: engineeringPrice ? Number(engineeringPrice) : undefined }),
       ...(category && { category }),
       ...(countInStock !== undefined && { countInStock: Number(countInStock) }),
       ...(brand !== undefined && { brand }),
@@ -423,8 +425,8 @@ router.put('/:id', protect, isAdmin, async (req, res) => {
   }
 });
 
-// DELETE product (admin only)
-router.delete('/:id', protect, isAdmin, async (req, res) => {
+// DELETE product (Admin OR Sales Rep with permission)
+router.delete('/:id', protect, requirePermission('manage_products'), async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });

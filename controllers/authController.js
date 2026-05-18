@@ -2,7 +2,7 @@
 import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
 import { Resend } from 'resend';
-import InviteToken from '../models/InviteToken.js'; // ✅ Import new model
+import InviteToken from '../models/InviteToken.js';
 
 // ✅ Resend Setup
 const resend = process.env.RESEND_API_KEY 
@@ -38,6 +38,8 @@ const sendOTPEmail = async (email, name, otp, uniqueId = '') => {
 };
 
 // ✅ Helper: Generate JWT
+// Note: We DO NOT put permissions in the JWT because they can be updated 
+// by the admin at any time. The middleware fetches fresh permissions from the DB.
 const generateToken = (user) => {
   return jwt.sign(
     { id: user._id, role: user.role }, 
@@ -79,6 +81,7 @@ export const registerUser = async (req, res) => {
     res.status(201).json({
       _id: user._id, name: user.name, email: user.email, 
       phone: user.phone, role: user.role, isVerified: user.isVerified,
+      permissions: user.permissions || [], // ✅ NEW: Return permissions (empty for regular users)
       token: generateToken(user)
     });
   } catch (error) {
@@ -162,6 +165,7 @@ export const resendOtp = async (req, res) => {
 export const loginUser = async (req, res) => {
   const { email, password } = req.body;
   try {
+    // ✅ Fetch permissions along with user data
     const user = await User.findOne({ email });
     
     if (user && (await user.matchPassword(password))) {
@@ -172,6 +176,7 @@ export const loginUser = async (req, res) => {
       res.json({
         _id: user._id, name: user.name, email: user.email, 
         phone: user.phone, role: user.role,
+        permissions: user.permissions || [], // ✅ NEW: Crucial for frontend routing
         token: generateToken(user)
       });
     } else {
@@ -188,10 +193,11 @@ export const loginUser = async (req, res) => {
 // ==========================================
 export const getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select("-password");
+    const user = await User.findById(req.user._id).select("-password -otp -otpExpires");
     res.json({ 
       _id: user._id, name: user.name, email: user.email, 
-      phone: user.phone, role: user.role, isVerified: user.isVerified 
+      phone: user.phone, role: user.role, isVerified: user.isVerified,
+      permissions: user.permissions || [] // ✅ NEW: Keep frontend state synced
     });
   } catch (error) {
     console.error(error.stack);
@@ -301,6 +307,7 @@ export const registerEngineer = async (req, res) => {
         phone: user.phone,
         role: user.role,
         isVerified: user.isVerified,
+        permissions: user.permissions || [], // ✅ NEW
       },
       token: generateToken(user),
     });

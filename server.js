@@ -2,7 +2,6 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
@@ -19,6 +18,9 @@ import messageRoutes from './routes/messageRoutes.js';
 import inviteRoutes from './routes/inviteRoutes.js';
 import paymentRoutes from "./routes/paymentRoutes.js";
 
+// ✅ NEW: Import middleware to protect the upload route
+import { protect, requirePermission } from './middleware/authMiddleware.js';
+
 // ✅ NEW IMPORTS FOR IMAGE UPLOAD
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
@@ -26,25 +28,28 @@ import streamifier from 'streamifier';
 
 const app = express();
 
-// ✅ CLOUDINARY CONFIGURATION
-// IMPORTANT: Replace 'YOUR_CLOUD_NAME_HERE' with your actual Cloudinary Cloud Name
+// ✅ CLOUDINARY CONFIGURATION (SECURED WITH ENV VARIABLES)
+// ⚠️ MOVE YOUR CLOUDINARY CREDENTIALS TO YOUR .env FILE IMMEDIATELY!
+// .env example:
+// CLOUDINARY_CLOUD_NAME=your_cloud_name
+// CLOUDINARY_API_KEY=234947822885619
+// CLOUDINARY_API_SECRET=NOJzLThTZ4Q9SQq1f0ToIdDzFRw
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'YOUR_CLOUD_NAME_HERE', 
-  api_key: '234947822885619',
-  api_secret: 'NOJzLThTZ4Q9SQq1f0ToIdDzFRw',
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME, 
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
   secure: true,
 });
 
-// ✅ MULTER SETUP (Stores files in memory temporarily before uploading to Cloudinary)
 const upload = multer();
 
 // ✅ UPDATED CORS CONFIGURATION
 const allowedOrigins = [
-  'http://172.29.136.57:3000',      // running on your computer
-  'http://192.168.1.15:5173',       // ✅ FIX: Removed /api from the end
+  'http://172.29.136.57:3000',
+  'http://192.168.1.15:5173',
   'http://localhost:3000',
-  'http://localhost:5173',           // Standard Vite local port added
-  'https://https://sulaitek1.vercel.app', // Your main production URL
+  'http://localhost:5173',
+  'https://https://sulaitek1.vercel.app', // Note: Double https:// might be a typo, verify your URL
   'https://afootechnology.com.ng',
   'https://www.afootechnology.com.ng',
   'www.afootechnology.com.ng'
@@ -52,21 +57,15 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, Postman, or curl)
     if (!origin) return callback(null, true);
-    
-    // Check if origin is in our list OR if it's a Vercel preview deployment
     if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
-      // Origin is allowed
       callback(null, true);
     } else {
-      // Origin is not allowed
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true // Optional: only add this if you are sending cookies/sessions
+  credentials: true
 }));
-// ✅ END OF CORS CONFIGURATION
 
 app.use(express.json());
 
@@ -81,38 +80,29 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/invites', inviteRoutes);
 app.use("/api/payments", paymentRoutes);
 
-// ✅ NEW IMAGE UPLOAD ROUTE
-// Handles up to 10 images at a time. Frontend sends files under the key "images"
-app.post('/api/upload', upload.array('images', 10), async (req, res) => {
+// ✅ SECURED IMAGE UPLOAD ROUTE
+// Only authenticated users with "manage_products" permission can upload
+app.post('/api/upload', protect, requirePermission('manage_products'), upload.array('images', 10), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ message: "No files uploaded" });
     }
 
-    // Map through files and upload each to Cloudinary
     const uploadPromises = req.files.map(
       (file) =>
         new Promise((resolve, reject) => {
           const uploadStream = cloudinary.uploader.upload_stream(
-            {
-              folder: "products", // Optional: saves files in a 'products' folder in Cloudinary
-              resource_type: "image",
-            },
+            { folder: "products", resource_type: "image" },
             (error, result) => {
               if (error) return reject(error);
-              resolve(result.secure_url); // Return the HTTPS URL
+              resolve(result.secure_url);
             }
           );
-
-          // Convert buffer to stream and pipe to Cloudinary
           streamifier.createReadStream(file.buffer).pipe(uploadStream);
         })
     );
 
-    // Wait for all uploads to finish
     const urls = await Promise.all(uploadPromises);
-
-    // Send the array of URLs back to the frontend
     res.status(200).json({ urls });
   } catch (error) {
     console.error("Cloudinary upload error:", error);
@@ -124,12 +114,21 @@ app.post('/api/upload', upload.array('images', 10), async (req, res) => {
 async function seedDemoUsers() {
   const demoAccounts = [
     { name: "MallHub Admin", email: "admin@mallhub.com", phone: "+23481100001", password: "admin123", role: "admin", isVerified: true },
-    { name: "Demo User", email: "user@mallhub.com", phone: "+2348000000002", password: "user123", role: "user", isVerified: true }
+    { name: "Demo User", email: "user@mallhub.com", phone: "+2348000000002", password: "user123", role: "user", isVerified: true },
+    // ✅ NEW: Seed a Sales Rep so you can test the new permission system
+    { 
+      name: "Demo Sales Rep", 
+      email: "sales@mallhub.com", 
+      phone: "+2348000000003", 
+      password: "sales123", 
+      role: "sales_rep", 
+      isVerified: true, 
+      permissions: ["manage_products", "manage_orders", "manage_categories"] // Example permissions
+    }
   ];
 
   for (const acc of demoAccounts) {
     try {
-      // ✅ FIX: Check if EITHER the email OR the phone already exists
       const exists = await User.findOne({ 
         $or: [{ email: acc.email }, { phone: acc.phone }] 
       });
@@ -138,12 +137,10 @@ async function seedDemoUsers() {
         await User.create(acc);
         console.log(`  🌱 Seeded: ${acc.email} (${acc.role})`);
       } else {
-        // Optional: Log why it was skipped
-        if (exists.email === acc.email) {
-          console.log(`  ⏭️ Skipped: ${acc.email} already exists`);
-        } else if (exists.phone === acc.phone) {
-          console.log(`  ⏭️ Skipped: Phone number ${acc.phone} already exists`);
-        }
+        // Optional: Update existing seed accounts if you add new fields (like permissions)
+        // This ensures your demo sales rep gets the new permissions array even if the email already exists
+        await User.updateOne({ email: acc.email }, { $set: { permissions: acc.permissions || [] } });
+        console.log(`  ⏭️ Skipped/Updated: ${acc.email} already exists`);
       }
     } catch (error) {
       console.error(`  ❌ Error seeding ${acc.email}:`, error.message);

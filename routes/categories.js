@@ -1,7 +1,9 @@
+// routes/categoryRoutes.js
 import express from 'express';
 import mongoose from 'mongoose';
 import Category from '../models/Category.js';
-import { protect, isAdmin } from '../middleware/authMiddleware.js';
+// ✅ UPDATED: Import requirePermission instead of isAdmin
+import { protect, requirePermission } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -51,8 +53,8 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST create category (admin only)
-router.post('/', protect, isAdmin, async (req, res) => {
+// POST create category (Admin OR Sales Rep with "manage_categories" permission)
+router.post('/', protect, requirePermission("manage_categories"), async (req, res) => {
   // Simple manual validation instead of express-validator
   const { name } = req.body;
   if (!name || typeof name !== 'string' || name.trim() === '') {
@@ -64,7 +66,7 @@ router.post('/', protect, isAdmin, async (req, res) => {
 
     const category = await Category.create({
       name: name.trim(),
-      icon: icon || 'lucide:package',
+      icon: icon || 'lucide:Package',
       image: image || '',
       description: description || '',
       showInSidebar: showInSidebar === true,
@@ -78,13 +80,12 @@ router.post('/', protect, isAdmin, async (req, res) => {
     if (error.code === 11000) {
       return res.status(400).json({ message: 'Category with this name already exists' });
     }
-    // I left error.message here temporarily so if it fails, your browser Network tab will tell you why
     res.status(500).json({ message: 'Failed to create category', error: error.message });
   }
 });
 
-// PUT update category (admin only)
-router.put('/:id', protect, isAdmin, async (req, res) => {
+// PUT update category (Admin OR Sales Rep with "manage_categories" permission)
+router.put('/:id', protect, requirePermission("manage_categories"), async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ message: 'Invalid category ID' });
@@ -121,8 +122,8 @@ router.put('/:id', protect, isAdmin, async (req, res) => {
   }
 });
 
-// DELETE category (admin only)
-router.delete('/:id', protect, isAdmin, async (req, res) => {
+// DELETE category (Admin OR Sales Rep with "manage_categories" permission)
+router.delete('/:id', protect, requirePermission("manage_categories"), async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ message: 'Invalid category ID' });

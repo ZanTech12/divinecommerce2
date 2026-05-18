@@ -10,19 +10,20 @@ import {
   toggleMessage,
 } from "../controllers/messageController.js";
 
-import { protect, isAdmin } from "../middleware/authMiddleware.js";
+// ✅ UPDATED: Import requirePermission instead of isAdmin
+import { protect, requirePermission } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// Public route — anyone can view active slides
+// Public routes — anyone can view active slides
 router.get("/", getMessages);
 router.get("/:id", getMessage);
 
-// isAdmin-only routes
-router.post("/", protect, isAdmin, createMessage);
-router.put("/reorder", protect, isAdmin, reorderMessages);
-router.put("/:id", protect, isAdmin, updateMessage);
-router.patch("/:id/toggle", protect, isAdmin, toggleMessage);
-router.delete("/:id", protect, isAdmin, deleteMessage);
+// Admin OR Sales Rep with "manage_banners" permission
+router.post("/", protect, requirePermission("manage_banners"), createMessage);
+router.put("/reorder", protect, requirePermission("manage_banners"), reorderMessages);
+router.put("/:id", protect, requirePermission("manage_banners"), updateMessage);
+router.patch("/:id/toggle", protect, requirePermission("manage_banners"), toggleMessage);
+router.delete("/:id", protect, requirePermission("manage_banners"), deleteMessage);
 
 export default router;

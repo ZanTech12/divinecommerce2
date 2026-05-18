@@ -1,8 +1,10 @@
+// routes/cartRoutes.js
 import express from 'express';
 import Cart from '../models/Cart.js';
 import Product from '../models/Product.js';
 import User from '../models/User.js'; 
-import { protect } from '../middleware/authMiddleware.js';
+// Import both protect and requirePermission in case you add admin-override routes later
+import { protect, requirePermission } from '../middleware/authMiddleware.js'; 
 import { sendCartReminderToUser, sendAbandonedCartAlertToAdmin } from '../utils/sendEmail.js';
 
 const router = express.Router();
@@ -15,7 +17,7 @@ const formatCartResponse = (cart) => {
   if (!cart) return { cartItems: [], totalPrice: 0, totalQty: 0 };
   const availableItems = cart.cartItems.filter(item => item.product);
   
-  // ✅ UPDATED: Calculate total using discountPrice if it exists
+  // Calculate total using discountPrice if it exists
   const totalPrice = availableItems.reduce((acc, item) => {
     const effectivePrice = item.discountPrice && item.discountPrice < item.price ? item.discountPrice : item.price;
     return acc + (effectivePrice * item.quantity);
@@ -24,6 +26,10 @@ const formatCartResponse = (cart) => {
   const totalQty = availableItems.reduce((acc, item) => acc + item.quantity, 0);
   return { cartItems: availableItems, totalPrice, totalQty };
 };
+
+// ==========================================
+// GENERAL ROUTES (Logged-in User's Own Cart)
+// ==========================================
 
 // @route   GET /api/cart
 router.get('/', protect, async (req, res) => {
@@ -39,7 +45,6 @@ router.get('/', protect, async (req, res) => {
 router.post('/', protect, async (req, res) => {
   const { productId, quantity = 1 } = req.body;
 
-  // ✅ ADDED: Safety check to prevent 404s from undefined IDs
   if (!productId) {
     return res.status(400).json({ message: 'Product ID is required' });
   }
@@ -68,9 +73,7 @@ router.post('/', protect, async (req, res) => {
       await cart.save();
     }
 
-    // ==========================================
-    // ✅ FIXED TIMER LOGIC
-    // ==========================================
+    // Fixed Timer Logic
     const userIdStr = req.user._id.toString();
 
     if (cartEmailTimers.has(userIdStr)) {
@@ -100,7 +103,6 @@ router.post('/', protect, async (req, res) => {
     }, 2 * 60 * 1000); 
 
     cartEmailTimers.set(userIdStr, timerId);
-    // ==========================================
 
     const populatedCart = await Cart.findOne({ user: req.user._id }).populate('cartItems.product', 'countInStock');
     return res.status(201).json(formatCartResponse(populatedCart));
@@ -116,6 +118,7 @@ router.put('/:productId', protect, async (req, res) => {
   try {
     let cart = await Cart.findOne({ user: req.user._id });
     if (!cart) return res.status(404).json({ message: 'Cart not found' });
+    
     const itemIndex = cart.cartItems.findIndex(item => item.product.toString() === req.params.productId);
     if (itemIndex === -1) return res.status(404).json({ message: 'Item not in cart' });
     

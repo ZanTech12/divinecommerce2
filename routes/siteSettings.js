@@ -1,6 +1,7 @@
 import express from 'express';
 import SiteSettings from '../models/SiteSettings.js';
-import { protect, isAdmin } from '../middleware/authMiddleware.js';
+// ✅ UPDATED: Import requirePermission instead of isAdmin
+import { protect, requirePermission } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -14,8 +15,8 @@ router.get('/', async (req, res) => {
   }
 });
 
-// PUT settings (admin only)
-router.put('/', protect, isAdmin, async (req, res) => {
+// PUT settings (admin only via permission gate)
+router.put('/', protect, requirePermission('manage_settings'), async (req, res) => {
   try {
     let settings = await SiteSettings.getSettings();
     Object.assign(settings, req.body);
@@ -26,8 +27,8 @@ router.put('/', protect, isAdmin, async (req, res) => {
   }
 });
 
-// PATCH specific section (admin only)
-router.patch('/:section', protect, isAdmin, async (req, res) => {
+// PATCH specific section (admin only via permission gate)
+router.patch('/:section', protect, requirePermission('manage_settings'), async (req, res) => {
   try {
     const { section } = req.params;
     const allowedSections = [

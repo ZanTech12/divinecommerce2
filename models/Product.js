@@ -5,7 +5,7 @@ const productSchema = new mongoose.Schema({
   description: { type: String, required: true },
   price: { type: Number, required: true },
   discountPrice: { type: Number },
-  engineeringPrice: { type: Number, default: null, select: false }, // ✅ NEW: Internal cost price (hidden from public by default)
+  engineeringPrice: { type: Number, default: null, select: false }, // Internal cost price (hidden from public by default)
   category: { type: String, required: true },
   image: { type: String, default: "" },
   images: [{ type: String }],
@@ -19,6 +19,12 @@ const productSchema = new mongoose.Schema({
   isNewArrival: { type: Boolean, default: false },
   isFlashSale: { type: Boolean, default: false },
   isActive: { type: Boolean, default: true },
+  assignedSalesRep: {                    // ✅ NEW: Links a sales rep to this product
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+    select: false,                       // Hidden from public by default
+  },
 }, { timestamps: true });
 
 const Product = mongoose.model('Product', productSchema);

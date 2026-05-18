@@ -49,7 +49,7 @@ const allowedOrigins = [
   'http://192.168.1.15:5173',
   'http://localhost:3000',
   'http://localhost:5173',
-  'https://https://luphemtechnologies.vercel.app', // Note: Double https:// might be a typo, verify your URL
+  'https://luphemtechnologies.vercel.app', // Note: Double https:// might be a typo, verify your URL
   'https://afootechnology.com.ng',
   'https://www.afootechnology.com.ng',
   'www.afootechnology.com.ng'

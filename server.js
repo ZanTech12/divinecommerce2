@@ -53,6 +53,7 @@ const allowedOrigins = [
   'https://afootechnology.com.ng',
   'https://okispecial.com.ng',
   'www.okispecial.com.ng',
+  'https://www.okispecial.com.ng',
   'https://www.afootechnology.com.ng',
   'www.afootechnology.com.ng'
 ];

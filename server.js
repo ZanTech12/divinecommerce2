@@ -51,6 +51,8 @@ const allowedOrigins = [
   'http://localhost:5173',
   'https://luphemtechnologies.vercel.app', // Note: Double https:// might be a typo, verify your URL
   'https://afootechnology.com.ng',
+  'https://okispecial.com.ng',
+  'www.okispecial.com.ng',
   'https://www.afootechnology.com.ng',
   'www.afootechnology.com.ng'
 ];

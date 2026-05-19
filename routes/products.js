@@ -429,12 +429,11 @@ router.put('/:id', protect, requirePermission('manage_products'), async (req, re
       ...(isFlashSale !== undefined && { isFlashSale }),
       ...(isActive !== undefined && { isActive }),
     });
-
-    // ✅ PRICE & DISCOUNT PRICE: Only Admin/Engineer can modify
-    if (price !== undefined && isAdminOrEngineer) {
+    // ✅ PRICE & DISCOUNT PRICE: Admin/Engineer OR the assigned sales rep can modify
+    if (price !== undefined && (isAdminOrEngineer || isAssignedSalesRep)) {
       product.price = Number(price);
     }
-    if (discountPrice !== undefined && isAdminOrEngineer) {
+    if (discountPrice !== undefined && (isAdminOrEngineer || isAssignedSalesRep)) {
       product.discountPrice = discountPrice ? Number(discountPrice) : undefined;
     }
 

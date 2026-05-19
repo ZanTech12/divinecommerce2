@@ -37,7 +37,7 @@ const canAlwaysSeeEngPrice = (user) => user && ['admin', 'engineer'].includes(us
 const canSeeEngPriceForProduct = (user, product) => {
   if (!user) return false;
   if (canAlwaysSeeEngPrice(user)) return true;
-  if (user.role === 'sales_rep') { // ✅ FIXED: Match frontend role string
+  if (user.role === 'sales_rep') { // ✅ FIXED role string
     const assignedId = product.assignedSalesRep?.toString();
     return assignedId && assignedId === user._id.toString();
   }
@@ -57,7 +57,7 @@ const processProductsForUser = (products, user) => {
   if (canAlwaysSeeEngPrice(user)) return products;
 
   // Sales rep: see engineeringPrice only on products they're assigned to
-  if (user.role === 'sales_rep') { // ✅ FIXED: Match frontend role string
+  if (user.role === 'sales_rep') { // ✅ FIXED role string
     return products.map(product => {
       if (canSeeEngPriceForProduct(user, product)) return product;
       return stripInternalFields(product);
@@ -412,7 +412,7 @@ router.put('/:id', protect, requirePermission('manage_products'), async (req, re
 
     const isAdminOrEngineer = canAlwaysSeeEngPrice(req.user);
     const isAssignedSalesRep =
-      req.user.role === 'sales_rep' && // ✅ FIXED: Match frontend role string
+      req.user.role === 'sales_rep' && // ✅ FIXED role string
       product.assignedSalesRep?.toString() === req.user._id.toString();
 
     // ── Standard field updates ──
@@ -482,18 +482,16 @@ router.put('/:id', protect, requirePermission('manage_products'), async (req, re
 // ─────────────────────────────────────────────────────
 router.patch('/:id/assign-rep', protect, requirePermission('manage_products'), async (req, res) => {
   try {
-    // Only admin/engineer can assign reps
     if (!canAlwaysSeeEngPrice(req.user)) {
       return res.status(403).json({ message: 'Only Admin or Engineer can assign a sales rep' });
     }
 
     const { salesRepId } = req.body;  // null to unassign
 
-    // Validate that the user being assigned is actually a sales rep
     if (salesRepId) {
       const repUser = await User.findById(salesRepId);
       if (!repUser) return res.status(404).json({ message: 'User not found' });
-      if (repUser.role !== 'sales_rep') { // ✅ FIXED: Match frontend role string
+      if (repUser.role !== 'sales_rep') { // ✅ FIXED role string
         return res.status(400).json({ message: 'Assigned user must have the sales_rep role' });
       }
     }

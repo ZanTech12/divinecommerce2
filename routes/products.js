@@ -27,7 +27,7 @@ const optionalAuth = async (req, res, next) => {
 };
 
 // ─────────────────────────────────────────────────────
-// HELPERS: Engineering price visibility
+// HELPERS: Engineering price visibility (unchanged)
 // ─────────────────────────────────────────────────────
 
 // ✅ Admin/Engineer can ALWAYS see engineering price
@@ -37,7 +37,7 @@ const canAlwaysSeeEngPrice = (user) => user && ['admin', 'engineer'].includes(us
 const canSeeEngPriceForProduct = (user, product) => {
   if (!user) return false;
   if (canAlwaysSeeEngPrice(user)) return true;
-  if (user.role === 'sales_rep') { // ✅ FIXED role string
+  if (user.role === 'sales_rep') {
     const assignedId = product.assignedSalesRep?.toString();
     return assignedId && assignedId === user._id.toString();
   }
@@ -57,7 +57,7 @@ const processProductsForUser = (products, user) => {
   if (canAlwaysSeeEngPrice(user)) return products;
 
   // Sales rep: see engineeringPrice only on products they're assigned to
-  if (user.role === 'sales_rep') { // ✅ FIXED role string
+  if (user.role === 'sales_rep') {
     return products.map(product => {
       if (canSeeEngPriceForProduct(user, product)) return product;
       return stripInternalFields(product);
@@ -65,6 +65,24 @@ const processProductsForUser = (products, user) => {
   }
 
   return products.map(stripInternalFields);
+};
+
+// ─────────────────────────────────────────────────────
+// HELPER: Price editing permission
+// Only admin and sales_rep can add/edit/delete
+// discountPrice, sellingPrice (price), and engineeringPrice
+// ─────────────────────────────────────────────────────
+const canEditPrices = (user, product = null) => {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  if (user.role === 'sales_rep') {
+    // For new products (no product yet), any sales_rep can set prices
+    if (!product) return true;
+    // For existing products, only the assigned sales_rep can edit prices
+    const assignedId = product.assignedSalesRep?.toString();
+    return assignedId && assignedId === user._id.toString();
+  }
+  return false;
 };
 
 // ─────────────────────────────────────────────────────
@@ -344,6 +362,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
 
 // ─────────────────────────────────────────────────────
 // POST create product
+// ✅ Only admin and sales_rep can set price, discountPrice, engineeringPrice
 // ─────────────────────────────────────────────────────
 router.post('/', protect, requirePermission('manage_products'), async (req, res) => {
   try {
@@ -356,10 +375,14 @@ router.post('/', protect, requirePermission('manage_products'), async (req, res)
 
     const cleanedImages = (images || []).filter((img) => img && img.trim());
 
-    const finalEngPrice = canAlwaysSeeEngPrice(req.user) && engineeringPrice
-      ? Number(engineeringPrice)
-      : undefined;
+    // ✅ Only admin and sales_rep can set prices on creation
+    const canSetPrices = canEditPrices(req.user, null);
 
+    const finalPrice = canSetPrices && price ? Number(price) : undefined;
+    const finalDiscountPrice = canSetPrices && discountPrice ? Number(discountPrice) : undefined;
+    const finalEngPrice = canSetPrices && engineeringPrice ? Number(engineeringPrice) : undefined;
+
+    // assignedSalesRep: only admin/engineer can set
     const finalAssignedRep = canAlwaysSeeEngPrice(req.user) && assignedSalesRep
       ? assignedSalesRep
       : undefined;
@@ -367,8 +390,8 @@ router.post('/', protect, requirePermission('manage_products'), async (req, res)
     const product = await Product.create({
       name,
       description,
-      price: Number(price),
-      discountPrice: discountPrice ? Number(discountPrice) : undefined,
+      price: finalPrice,
+      discountPrice: finalDiscountPrice,
       engineeringPrice: finalEngPrice,
       category,
       images: cleanedImages,
@@ -394,13 +417,13 @@ router.post('/', protect, requirePermission('manage_products'), async (req, res)
 
 // ─────────────────────────────────────────────────────
 // PUT update product
+// ✅ Only admin and sales_rep can modify price, discountPrice, engineeringPrice
 // ─────────────────────────────────────────────────────
 router.put('/:id', protect, requirePermission('manage_products'), async (req, res) => {
   try {
-    // ✅ FIX: Must explicitly select engineeringPrice and assignedSalesRep because they have `select: false` in schema
     const product = await Product.findById(req.params.id)
       .select('+discountPrice +engineeringPrice +assignedSalesRep');
-      
+
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
     const {
@@ -411,9 +434,7 @@ router.put('/:id', protect, requirePermission('manage_products'), async (req, re
     } = req.body;
 
     const isAdminOrEngineer = canAlwaysSeeEngPrice(req.user);
-    const isAssignedSalesRep =
-      req.user.role === 'sales_rep' && // ✅ FIXED role string
-      product.assignedSalesRep?.toString() === req.user._id.toString();
+    const canModifyPrices = canEditPrices(req.user, product);
 
     // ── Standard field updates ──
     Object.assign(product, {
@@ -429,24 +450,23 @@ router.put('/:id', protect, requirePermission('manage_products'), async (req, re
       ...(isFlashSale !== undefined && { isFlashSale }),
       ...(isActive !== undefined && { isActive }),
     });
-    // ✅ PRICE & DISCOUNT PRICE: Admin/Engineer OR the assigned sales rep can modify
-    if (price !== undefined && (isAdminOrEngineer || isAssignedSalesRep)) {
+
+    // ✅ SELLING PRICE: Only admin or sales_rep can modify
+    if (price !== undefined && canModifyPrices) {
       product.price = Number(price);
     }
-    if (discountPrice !== undefined && (isAdminOrEngineer || isAssignedSalesRep)) {
+
+    // ✅ DISCOUNT PRICE: Only admin or sales_rep can modify
+    if (discountPrice !== undefined && canModifyPrices) {
       product.discountPrice = discountPrice ? Number(discountPrice) : undefined;
     }
 
-    // ✅ ENGINEERING PRICE: Admin/Engineer OR the assigned sales rep can modify it
-    if (engineeringPrice !== undefined) {
-      const canEditEngPrice = isAdminOrEngineer || isAssignedSalesRep;
-
-      if (canEditEngPrice) {
-        product.engineeringPrice = engineeringPrice ? Number(engineeringPrice) : undefined;
-      }
+    // ✅ ENGINEERING PRICE: Only admin or sales_rep can modify
+    if (engineeringPrice !== undefined && canModifyPrices) {
+      product.engineeringPrice = engineeringPrice ? Number(engineeringPrice) : undefined;
     }
 
-    // ✅ ASSIGNED SALES REP: Only Admin/Engineer can change assignment
+    // ✅ ASSIGNED SALES REP: Only Admin/Engineer can change assignment (unchanged)
     if (assignedSalesRep !== undefined && isAdminOrEngineer) {
       product.assignedSalesRep = assignedSalesRep || null;
     }
@@ -477,7 +497,7 @@ router.put('/:id', protect, requirePermission('manage_products'), async (req, re
 });
 
 // ─────────────────────────────────────────────────────
-// ✅ NEW: Assign a sales rep to a product (Admin/Engineer only)
+// ✅ Assign a sales rep to a product (Admin/Engineer only) — unchanged
 // ─────────────────────────────────────────────────────
 router.patch('/:id/assign-rep', protect, requirePermission('manage_products'), async (req, res) => {
   try {
@@ -485,12 +505,12 @@ router.patch('/:id/assign-rep', protect, requirePermission('manage_products'), a
       return res.status(403).json({ message: 'Only Admin or Engineer can assign a sales rep' });
     }
 
-    const { salesRepId } = req.body;  // null to unassign
+    const { salesRepId } = req.body;
 
     if (salesRepId) {
       const repUser = await User.findById(salesRepId);
       if (!repUser) return res.status(404).json({ message: 'User not found' });
-      if (repUser.role !== 'sales_rep') { // ✅ FIXED role string
+      if (repUser.role !== 'sales_rep') {
         return res.status(400).json({ message: 'Assigned user must have the sales_rep role' });
       }
     }

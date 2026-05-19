@@ -403,9 +403,15 @@ router.post('/', protect, requirePermission('manage_products'), async (req, res)
 // ─────────────────────────────────────────────────────
 // PUT update product
 // ─────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────
+// PUT update product
+// ─────────────────────────────────────────────────────
 router.put('/:id', protect, requirePermission('manage_products'), async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
+    // ✅ FIX: Must explicitly select engineeringPrice and assignedSalesRep because they have `select: false` in schema
+    const product = await Product.findById(req.params.id)
+      .select('+discountPrice +engineeringPrice +assignedSalesRep');
+      
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
     const {

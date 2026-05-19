@@ -37,7 +37,7 @@ const canAlwaysSeeEngPrice = (user) => user && ['admin', 'engineer'].includes(us
 const canSeeEngPriceForProduct = (user, product) => {
   if (!user) return false;
   if (canAlwaysSeeEngPrice(user)) return true;
-  if (user.role === 'salesRep') {
+  if (user.role === 'sales_rep') { // ✅ FIXED: Match frontend role string
     const assignedId = product.assignedSalesRep?.toString();
     return assignedId && assignedId === user._id.toString();
   }
@@ -57,7 +57,7 @@ const processProductsForUser = (products, user) => {
   if (canAlwaysSeeEngPrice(user)) return products;
 
   // Sales rep: see engineeringPrice only on products they're assigned to
-  if (user.role === 'salesRep') {
+  if (user.role === 'sales_rep') { // ✅ FIXED: Match frontend role string
     return products.map(product => {
       if (canSeeEngPriceForProduct(user, product)) return product;
       return stripInternalFields(product);
@@ -103,7 +103,6 @@ router.get('/', optionalAuth, async (req, res) => {
     const limitNum = parseInt(limit) || 0;
     const skip = (pageNum - 1) * limitNum;
 
-    // ✅ Always select engineeringPrice + assignedSalesRep so we can do per-product checks
     const products = await Product.find(filter)
       .select('+discountPrice +engineeringPrice +assignedSalesRep')
       .sort(sortOption)
@@ -113,7 +112,6 @@ router.get('/', optionalAuth, async (req, res) => {
     const total = await Product.countDocuments(filter);
     const processed = processProductsForUser(products, req.user);
 
-    // Maintain backward-compatible response shape
     if (limitNum > 0) {
       res.json({ products: processed, total, page: pageNum, totalPages: Math.ceil(total / limitNum) });
     } else {
@@ -158,7 +156,6 @@ router.get('/admin/all', protect, requirePermission('manage_products'), async (r
     const limitNum = parseInt(limit) || 0;
     const skip = (pageNum - 1) * limitNum;
 
-    // ✅ Always fetch engineeringPrice + assignedSalesRep; strip per-product
     const products = await Product.find(filter)
       .select('+discountPrice +engineeringPrice +assignedSalesRep')
       .sort(sortOption)
@@ -189,7 +186,6 @@ router.get('/grouped', optionalAuth, async (req, res) => {
       { $sort: { _id: 1 } }
     ]);
 
-    // ✅ Per-product stripping for sales reps
     const result = groupedProducts.map(group => ({
       ...group,
       products: processProductsForUser(group.products, req.user)
@@ -355,18 +351,15 @@ router.post('/', protect, requirePermission('manage_products'), async (req, res)
       name, description, price, discountPrice, engineeringPrice, category,
       images, countInStock, brand, sku, tags,
       isFeatured, isNewArrival, isFlashSale,
-      assignedSalesRep,   // ✅ NEW: admin can assign a sales rep on creation
+      assignedSalesRep,
     } = req.body;
 
     const cleanedImages = (images || []).filter((img) => img && img.trim());
 
-    // ✅ Only Admin/Engineer can set engineeringPrice on creation
-    //    (Sales rep will set it later via PUT once assigned)
     const finalEngPrice = canAlwaysSeeEngPrice(req.user) && engineeringPrice
       ? Number(engineeringPrice)
       : undefined;
 
-    // ✅ Only Admin can assign a sales rep
     const finalAssignedRep = canAlwaysSeeEngPrice(req.user) && assignedSalesRep
       ? assignedSalesRep
       : undefined;
@@ -390,7 +383,6 @@ router.post('/', protect, requirePermission('manage_products'), async (req, res)
       assignedSalesRep: finalAssignedRep,
     });
 
-    // Return with populated assignedSalesRep
     const populated = await Product.findById(product._id)
       .populate('assignedSalesRep', 'name email');
 
@@ -400,9 +392,6 @@ router.post('/', protect, requirePermission('manage_products'), async (req, res)
   }
 });
 
-// ─────────────────────────────────────────────────────
-// PUT update product
-// ─────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────
 // PUT update product
 // ─────────────────────────────────────────────────────
@@ -423,7 +412,7 @@ router.put('/:id', protect, requirePermission('manage_products'), async (req, re
 
     const isAdminOrEngineer = canAlwaysSeeEngPrice(req.user);
     const isAssignedSalesRep =
-      req.user.role === 'salesRep' &&
+      req.user.role === 'sales_rep' && // ✅ FIXED: Match frontend role string
       product.assignedSalesRep?.toString() === req.user._id.toString();
 
     // ── Standard field updates ──
@@ -456,7 +445,6 @@ router.put('/:id', protect, requirePermission('manage_products'), async (req, re
       if (canEditEngPrice) {
         product.engineeringPrice = engineeringPrice ? Number(engineeringPrice) : undefined;
       }
-      // Silently ignore if not authorized — could also return 403
     }
 
     // ✅ ASSIGNED SALES REP: Only Admin/Engineer can change assignment
@@ -478,6 +466,7 @@ router.put('/:id', protect, requirePermission('manage_products'), async (req, re
     await product.save();
 
     const populated = await Product.findById(product._id)
+      .select('+discountPrice +engineeringPrice +assignedSalesRep')
       .populate('assignedSalesRep', 'name email');
 
     // ✅ Strip engineeringPrice if requester shouldn't see it
@@ -504,8 +493,8 @@ router.patch('/:id/assign-rep', protect, requirePermission('manage_products'), a
     if (salesRepId) {
       const repUser = await User.findById(salesRepId);
       if (!repUser) return res.status(404).json({ message: 'User not found' });
-      if (repUser.role !== 'salesRep') {
-        return res.status(400).json({ message: 'Assigned user must have the salesRep role' });
+      if (repUser.role !== 'sales_rep') { // ✅ FIXED: Match frontend role string
+        return res.status(400).json({ message: 'Assigned user must have the sales_rep role' });
       }
     }
 

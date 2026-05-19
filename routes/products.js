@@ -412,15 +412,18 @@ router.put('/:id', protect, requirePermission('manage_products'), async (req, re
       name, description, price, discountPrice, engineeringPrice, category,
       images, countInStock, brand, sku, tags,
       isFeatured, isNewArrival, isFlashSale, isActive,
-      assignedSalesRep,   // ✅ NEW
+      assignedSalesRep,
     } = req.body;
+
+    const isAdminOrEngineer = canAlwaysSeeEngPrice(req.user);
+    const isAssignedSalesRep =
+      req.user.role === 'salesRep' &&
+      product.assignedSalesRep?.toString() === req.user._id.toString();
 
     // ── Standard field updates ──
     Object.assign(product, {
       ...(name && { name }),
       ...(description && { description }),
-      ...(price !== undefined && { price: Number(price) }),
-      ...(discountPrice !== undefined && { discountPrice: discountPrice ? Number(discountPrice) : undefined }),
       ...(category && { category }),
       ...(countInStock !== undefined && { countInStock: Number(countInStock) }),
       ...(brand !== undefined && { brand }),
@@ -432,20 +435,26 @@ router.put('/:id', protect, requirePermission('manage_products'), async (req, re
       ...(isActive !== undefined && { isActive }),
     });
 
+    // ✅ PRICE & DISCOUNT PRICE: Only Admin/Engineer can modify
+    if (price !== undefined && isAdminOrEngineer) {
+      product.price = Number(price);
+    }
+    if (discountPrice !== undefined && isAdminOrEngineer) {
+      product.discountPrice = discountPrice ? Number(discountPrice) : undefined;
+    }
+
     // ✅ ENGINEERING PRICE: Admin/Engineer OR the assigned sales rep can modify it
     if (engineeringPrice !== undefined) {
-      const canEdit = canAlwaysSeeEngPrice(req.user) ||
-        (req.user.role === 'salesRep' &&
-         product.assignedSalesRep?.toString() === req.user._id.toString());
+      const canEditEngPrice = isAdminOrEngineer || isAssignedSalesRep;
 
-      if (canEdit) {
+      if (canEditEngPrice) {
         product.engineeringPrice = engineeringPrice ? Number(engineeringPrice) : undefined;
       }
       // Silently ignore if not authorized — could also return 403
     }
 
     // ✅ ASSIGNED SALES REP: Only Admin/Engineer can change assignment
-    if (assignedSalesRep !== undefined && canAlwaysSeeEngPrice(req.user)) {
+    if (assignedSalesRep !== undefined && isAdminOrEngineer) {
       product.assignedSalesRep = assignedSalesRep || null;
     }
 

@@ -17,7 +17,7 @@ const siteSettingsSchema = new mongoose.Schema({
   youtube: { type: String, default: '' },
   currency: { type: String, default: '₦' },
   currencyCode: { type: String, default: 'NGN' },
-  freeDeliveryThreshold: { type: Number, default: 15000 },
+  freeDeliveryThreshold: { type: Number, default: 150 },
   returnDays: { type: Number, default: 30 },
   supportHours: { type: String, default: '24/7' },
   footerText: { type: String, default: '© 2025 MallHub. All rights reserved.' },

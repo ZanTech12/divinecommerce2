@@ -18,7 +18,8 @@ const sendOTPEmail = async (email, name, otp, uniqueId = '') => {
   if (!resend) throw new Error('RESEND_API_KEY is not configured');
 
   const { error } = await resend.emails.send({
-    from: `"${process.env.STORE_NAME || 'MallHub'}" <onboarding@resend.dev>`,
+    // 🛠️ CHANGED: Replaced onboarding@resend.dev with your verified domain
+    from: `"${process.env.STORE_NAME || 'MallHub'}" <${process.env.EMAIL_FROM || 'noreply@okispecial.com.ng'}>`,
     to: email,
     subject: `Your Email Verification Code ${uniqueId ? `[Ref: ${uniqueId}]` : ''}`,
     html: `
@@ -38,8 +39,6 @@ const sendOTPEmail = async (email, name, otp, uniqueId = '') => {
 };
 
 // ✅ Helper: Generate JWT
-// Note: We DO NOT put permissions in the JWT because they can be updated 
-// by the admin at any time. The middleware fetches fresh permissions from the DB.
 const generateToken = (user) => {
   return jwt.sign(
     { id: user._id, role: user.role }, 
@@ -81,7 +80,7 @@ export const registerUser = async (req, res) => {
     res.status(201).json({
       _id: user._id, name: user.name, email: user.email, 
       phone: user.phone, role: user.role, isVerified: user.isVerified,
-      permissions: user.permissions || [], // ✅ NEW: Return permissions (empty for regular users)
+      permissions: user.permissions || [],
       token: generateToken(user)
     });
   } catch (error) {
@@ -165,7 +164,6 @@ export const resendOtp = async (req, res) => {
 export const loginUser = async (req, res) => {
   const { email, password } = req.body;
   try {
-    // ✅ Fetch permissions along with user data
     const user = await User.findOne({ email });
     
     if (user && (await user.matchPassword(password))) {
@@ -176,7 +174,7 @@ export const loginUser = async (req, res) => {
       res.json({
         _id: user._id, name: user.name, email: user.email, 
         phone: user.phone, role: user.role,
-        permissions: user.permissions || [], // ✅ NEW: Crucial for frontend routing
+        permissions: user.permissions || [],
         token: generateToken(user)
       });
     } else {
@@ -197,7 +195,7 @@ export const getProfile = async (req, res) => {
     res.json({ 
       _id: user._id, name: user.name, email: user.email, 
       phone: user.phone, role: user.role, isVerified: user.isVerified,
-      permissions: user.permissions || [] // ✅ NEW: Keep frontend state synced
+      permissions: user.permissions || []
     });
   } catch (error) {
     console.error(error.stack);
@@ -206,13 +204,12 @@ export const getProfile = async (req, res) => {
 };
 
 // ==========================================
-// 6. REGISTER ENGINEER ✅ UPDATED
+// 6. REGISTER ENGINEER
 // ==========================================
 export const registerEngineer = async (req, res) => {
   const { name, email, phone, password, inviteCode } = req.body;
 
   try {
-    // ✅ Step 1: Validate invite code from DATABASE instead of .env
     if (!inviteCode) {
       return res.status(400).json({
         success: false,
@@ -229,9 +226,8 @@ export const registerEngineer = async (req, res) => {
       });
     }
 
-    // ✅ Step 2: Check if token has expired
     if (new Date() > new Date(tokenRecord.expiresAt)) {
-      tokenRecord.isActive = false; // Soft delete expired token
+      tokenRecord.isActive = false;
       await tokenRecord.save();
       
       return res.status(400).json({
@@ -240,7 +236,6 @@ export const registerEngineer = async (req, res) => {
       });
     }
 
-    // ✅ Step 3: Check if email already exists
     const emailExists = await User.findOne({ email: email.toLowerCase() });
     if (emailExists) {
       return res.status(400).json({
@@ -249,7 +244,6 @@ export const registerEngineer = async (req, res) => {
       });
     }
 
-    // ✅ Step 4: Check if phone already exists
     const phoneExists = await User.findOne({ phone });
     if (phoneExists) {
       return res.status(400).json({
@@ -258,7 +252,6 @@ export const registerEngineer = async (req, res) => {
       });
     }
 
-    // ✅ Step 5: Validate password length
     if (!password || password.length < 6) {
       return res.status(400).json({
         success: false,
@@ -266,11 +259,9 @@ export const registerEngineer = async (req, res) => {
       });
     }
 
-    // ✅ Step 6: Generate OTP for email verification
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
 
-    // ✅ Step 7: Create user with engineer role
     const user = await User.create({
       name,
       email: email.toLowerCase(),
@@ -284,19 +275,16 @@ export const registerEngineer = async (req, res) => {
 
     console.log(`🔧 Engineer OTP for ${email}: ${otp}`);
 
-    // ✅ Step 8: Mark invite token as used
     tokenRecord.isActive = false;
     tokenRecord.usedBy = user._id;
     await tokenRecord.save();
 
-    // ✅ Step 9: Send OTP email (same as normal register)
     try {
       await sendOTPEmail(email, name, otp);
     } catch (emailError) {
       console.error('⚠️ Failed to send OTP email:', emailError.message);
     }
 
-    // ✅ Step 10: Return success with token
     res.status(201).json({
       success: true,
       message: "Engineer account created! Please verify your email.",
@@ -307,7 +295,7 @@ export const registerEngineer = async (req, res) => {
         phone: user.phone,
         role: user.role,
         isVerified: user.isVerified,
-        permissions: user.permissions || [], // ✅ NEW
+        permissions: user.permissions || [],
       },
       token: generateToken(user),
     });

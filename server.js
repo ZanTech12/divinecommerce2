@@ -17,6 +17,8 @@ import userRoutes from './routes/userRoutes.js';
 import messageRoutes from './routes/messageRoutes.js';
 import inviteRoutes from './routes/inviteRoutes.js';
 import paymentRoutes from "./routes/paymentRoutes.js";
+import activityRoutes from './routes/activityRoutes.js';
+import dashboardRoutes from './routes/dashboardRoutes.js';
 
 // ✅ NEW: Import middleware to protect the upload route
 import { protect, requirePermission } from './middleware/authMiddleware.js';
@@ -82,6 +84,8 @@ app.use('/api/users', userRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/invites', inviteRoutes);
 app.use("/api/payments", paymentRoutes);
+app.use('/api/activities', activityRoutes); 
+app.use('/api/dashboard', dashboardRoutes);
 
 // ✅ SECURED IMAGE UPLOAD ROUTE
 // Only authenticated users with "manage_products" permission can upload

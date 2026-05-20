@@ -3,7 +3,8 @@ import express from 'express';
 import Cart from '../models/Cart.js';
 import Product from '../models/Product.js';
 import User from '../models/User.js'; 
-// Import both protect and requirePermission in case you add admin-override routes later
+import Activity from '../models/Activity.js'; // ✅ IMPORT THE ACTIVITY MODEL
+
 import { protect, requirePermission } from '../middleware/authMiddleware.js'; 
 import { sendCartReminderToUser, sendAbandonedCartAlertToAdmin } from '../utils/sendEmail.js';
 
@@ -17,7 +18,6 @@ const formatCartResponse = (cart) => {
   if (!cart) return { cartItems: [], totalPrice: 0, totalQty: 0 };
   const availableItems = cart.cartItems.filter(item => item.product);
   
-  // Calculate total using discountPrice if it exists
   const totalPrice = availableItems.reduce((acc, item) => {
     const effectivePrice = item.discountPrice && item.discountPrice < item.price ? item.discountPrice : item.price;
     return acc + (effectivePrice * item.quantity);
@@ -73,6 +73,15 @@ router.post('/', protect, async (req, res) => {
       await cart.save();
     }
 
+    // ✅ LOG ACTIVITY: Item added to cart
+    // Using .catch() so it doesn't block/delay the API response if it fails
+    Activity.create({
+      type: "cart",
+      message: `${req.user.name || 'A user'} added "${product.name}" to their cart`,
+      referenceId: product._id,
+      performedBy: req.user._id
+    }).catch(err => console.error("Failed to log cart activity:", err));
+
     // Fixed Timer Logic
     const userIdStr = req.user._id.toString();
 
@@ -92,6 +101,14 @@ router.post('/', protect, async (req, res) => {
             sendCartReminderToUser(freshUser, latestCart.cartItems, totalPrice),
             sendAbandonedCartAlertToAdmin(freshUser, latestCart.cartItems, totalPrice)
           ]);
+
+          // ✅ LOG ACTIVITY: Cart Abandoned / Reminder Sent
+          Activity.create({
+            type: "cart_abandoned",
+            message: `Cart abandoned by ${freshUser.email}. Reminder email sent.`,
+            referenceId: latestCart._id,
+            performedBy: freshUser._id
+          }).catch(err => console.error("Failed to log abandoned cart activity:", err));
 
           console.log(`✅ Cart reminders sent for user: ${freshUser.email}`);
         }

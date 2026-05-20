@@ -3,6 +3,7 @@ import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
 import { Resend } from 'resend';
 import InviteToken from '../models/InviteToken.js';
+import Activity from '../models/Activity.js'; // ✅ ADDED: Import Activity Model
 
 // ✅ Resend Setup
 const resend = process.env.RESEND_API_KEY 
@@ -77,6 +78,14 @@ export const registerUser = async (req, res) => {
       console.error('⚠️ Failed to send OTP email:', emailError.message);
     }
     
+    // ✅ ADDED: Log user registration activity (Fire and forget)
+    Activity.create({
+      type: "user",
+      message: `New user registration: ${user.name} (${user.email})`,
+      referenceId: user._id,
+      performedBy: user._id
+    }).catch(err => console.error("Activity Log Error:", err));
+
     res.status(201).json({
       _id: user._id, name: user.name, email: user.email, 
       phone: user.phone, role: user.role, isVerified: user.isVerified,
@@ -284,6 +293,14 @@ export const registerEngineer = async (req, res) => {
     } catch (emailError) {
       console.error('⚠️ Failed to send OTP email:', emailError.message);
     }
+
+    // ✅ ADDED: Log engineer registration activity (Fire and forget)
+    Activity.create({
+      type: "user",
+      message: `New engineer registration: ${user.name} (${user.email})`,
+      referenceId: user._id,
+      performedBy: user._id
+    }).catch(err => console.error("Activity Log Error:", err));
 
     res.status(201).json({
       success: true,

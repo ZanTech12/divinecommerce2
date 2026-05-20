@@ -57,6 +57,7 @@ const allowedOrigins = [
   'www.okispecial.com.ng',
   'https://www.okispecial.com.ng',
   'https://www.afootechnology.com.ng',
+  'https://www.luphemtechnologies.vercel.app',
   'www.afootechnology.com.ng'
 ];
 
@@ -120,12 +121,12 @@ app.post('/api/upload', protect, requirePermission('manage_products'), upload.ar
 // Seed demo users
 async function seedDemoUsers() {
   const demoAccounts = [
-    { name: "SulaiTek Communication Admin", email: "admin@SulaiTek Communication.com", phone: "+23481100001", password: "admin123", role: "admin", isVerified: true },
-    { name: "Demo User", email: "user@SulaiTek Communication.com", phone: "+2348000000002", password: "user123", role: "user", isVerified: true },
+    { name: "LuphemTechnologies Admin", email: "admin@LuphemTechnologies.com", phone: "+23481100001", password: "admin123", role: "admin", isVerified: true },
+    { name: "Demo User", email: "user@LuphemTechnologies.com", phone: "+2348000000002", password: "user123", role: "user", isVerified: true },
     // ✅ NEW: Seed a Sales Rep so you can test the new permission system
     { 
       name: "Demo Sales Rep", 
-      email: "sales@SulaiTek Communication.com", 
+      email: "sales@LuphemTechnologies.com", 
       phone: "+2348000000003", 
       password: "sales123", 
       role: "sales_rep", 

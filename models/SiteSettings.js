@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 const siteSettingsSchema = new mongoose.Schema({
-  companyName: { type: String, default: 'MallHub' },
+  companyName: { type: String, default: 'SulaiTek Communication' },
   companyTagline: { type: String, default: 'Your One-Stop Online Mall' },
   logo: { type: String, default: '' },
   favicon: { type: String, default: '' },
@@ -20,7 +20,7 @@ const siteSettingsSchema = new mongoose.Schema({
   freeDeliveryThreshold: { type: Number, default: 150 },
   returnDays: { type: Number, default: 30 },
   supportHours: { type: String, default: '24/7' },
-  footerText: { type: String, default: '© 2025 MallHub. All rights reserved.' },
+  footerText: { type: String, default: '© 2025 SulaiTek Communication. All rights reserved.' },
   aboutUs: { type: String, default: '' },
   privacyPolicy: { type: String, default: '' },
   termsOfService: { type: String, default: '' },

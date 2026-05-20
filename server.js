@@ -116,12 +116,12 @@ app.post('/api/upload', protect, requirePermission('manage_products'), upload.ar
 // Seed demo users
 async function seedDemoUsers() {
   const demoAccounts = [
-    { name: "MallHub Admin", email: "admin@mallhub.com", phone: "+23481100001", password: "admin123", role: "admin", isVerified: true },
-    { name: "Demo User", email: "user@mallhub.com", phone: "+2348000000002", password: "user123", role: "user", isVerified: true },
+    { name: "SulaiTek Communication Admin", email: "admin@SulaiTek Communication.com", phone: "+23481100001", password: "admin123", role: "admin", isVerified: true },
+    { name: "Demo User", email: "user@SulaiTek Communication.com", phone: "+2348000000002", password: "user123", role: "user", isVerified: true },
     // ✅ NEW: Seed a Sales Rep so you can test the new permission system
     { 
       name: "Demo Sales Rep", 
-      email: "sales@mallhub.com", 
+      email: "sales@SulaiTek Communication.com", 
       phone: "+2348000000003", 
       password: "sales123", 
       role: "sales_rep", 

@@ -19,7 +19,7 @@ const sendOTPEmail = async (email, name, otp, uniqueId = '') => {
 
   const { error } = await resend.emails.send({
     // 🛠️ CHANGED: Replaced onboarding@resend.dev with your verified domain
-    from: `"${process.env.STORE_NAME || 'MallHub'}" <${process.env.EMAIL_FROM || 'noreply@okispecial.com.ng'}>`,
+    from: `"${process.env.STORE_NAME || 'SulaiTek Communication'}" <${process.env.EMAIL_FROM || 'noreply@okispecial.com.ng'}>`,
     to: email,
     subject: `Your Email Verification Code ${uniqueId ? `[Ref: ${uniqueId}]` : ''}`,
     html: `

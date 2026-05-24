@@ -52,13 +52,7 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
  'https://www.sulaitek1.vercel.app',// Note: Double https:// might be a typo, verify your UR
-  'https://afootechnology.com.ng',
-  'https://okispecial.com.ng',
-  'www.okispecial.com.ng',
-  'https://www.okispecial.com.ng',
-  'https://www.afootechnology.com.ng',
   'https://sulaitek1.vercel.app',
-  'www.afootechnology.com.ng',
   'https://sulaitek1-git-main-zantechs-projects.vercel.app',
   'https://www.sulaitek1-git-main-zantechs-projects.vercel.app'
 ];

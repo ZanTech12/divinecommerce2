@@ -51,13 +51,13 @@ const allowedOrigins = [
   'http://192.168.1.15:5173',
   'http://localhost:3000',
   'http://localhost:5173',
-  'https://luphemtechnologies.vercel.app', // Note: Double https:// might be a typo, verify your URL
+ 'https://sulaitek1.vercel.app'// Note: Double https:// might be a typo, verify your UR
   'https://afootechnology.com.ng',
   'https://okispecial.com.ng',
   'www.okispecial.com.ng',
   'https://www.okispecial.com.ng',
   'https://www.afootechnology.com.ng',
-  'https://www.luphemtechnologies.vercel.app',
+  'www.sulaitek1.vercel.app'
   'www.afootechnology.com.ng'
 ];
 
@@ -121,12 +121,12 @@ app.post('/api/upload', protect, requirePermission('manage_products'), upload.ar
 // Seed demo users
 async function seedDemoUsers() {
   const demoAccounts = [
-    { name: "LuphemTechnologies Admin", email: "admin@LuphemTechnologies.com", phone: "+23481100001", password: "admin123", role: "admin", isVerified: true },
-    { name: "Demo User", email: "user@LuphemTechnologies.com", phone: "+2348000000002", password: "user123", role: "user", isVerified: true },
+    { name: "Sulaitek Communication Admin", email: "admin@Sulaitek Communication.com", phone: "+23481100001", password: "admin123", role: "admin", isVerified: true },
+    { name: "Demo User", email: "user@Sulaitek Communication.com", phone: "+2348000000002", password: "user123", role: "user", isVerified: true },
     // ✅ NEW: Seed a Sales Rep so you can test the new permission system
     { 
       name: "Demo Sales Rep", 
-      email: "sales@LuphemTechnologies.com", 
+      email: "sales@Sulaitek Communication.com", 
       phone: "+2348000000003", 
       password: "sales123", 
       role: "sales_rep", 

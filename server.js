@@ -69,12 +69,8 @@ const corsOptions = {
   credentials: true
 };
 
-// Apply CORS middleware
+// Apply CORS middleware (This automatically handles OPTIONS preflight requests!)
 app.use(cors(corsOptions));
-
-// 🚨 BONUS FIX: Explicitly handle preflight OPTIONS requests
-// This ensures browsers asking for permission via OPTIONS get a proper 204 response
-app.options('*', cors(corsOptions));
 
 app.use(express.json());
 

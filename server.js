@@ -58,7 +58,9 @@ const allowedOrigins = [
   'https://www.okispecial.com.ng',
   'https://www.afootechnology.com.ng',
   'https://sulaitek1.vercel.app',
-  'www.afootechnology.com.ng'
+  'www.afootechnology.com.ng',
+  'https://sulaitek1-git-main-zantechs-projects.vercel.app',
+  'https://www.sulaitek1-git-main-zantechs-projects.vercel.app'
 ];
 
 app.use(cors({

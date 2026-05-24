@@ -47,14 +47,15 @@ const upload = multer();
 
 // ✅ UPDATED CORS CONFIGURATION
 const allowedOrigins = [
+  // Local development
   'http://172.29.136.57:3000',
   'http://192.168.1.15:5173',
   'http://localhost:3000',
   'http://localhost:5173',
- 'https://www.sulaitek1.vercel.app',// Note: Double https:// might be a typo, verify your UR
+  
+  // Production & Preview Vercel deployments
   'https://sulaitek1.vercel.app',
-  'https://sulaitek1-git-main-zantechs-projects.vercel.app',
-  'https://www.sulaitek1-git-main-zantechs-projects.vercel.app'
+  'https://sulaitek1-git-main-zantechs-projects.vercel.app'
 ];
 
 app.use(cors({

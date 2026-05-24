@@ -57,7 +57,7 @@ const allowedOrigins = [
   'www.okispecial.com.ng',
   'https://www.okispecial.com.ng',
   'https://www.afootechnology.com.ng',
-  'www.sulaitek1.vercel.app',
+  'https://sulaitek1.vercel.app',
   'www.afootechnology.com.ng'
 ];
 

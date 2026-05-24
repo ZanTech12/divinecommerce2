@@ -31,11 +31,6 @@ import streamifier from 'streamifier';
 const app = express();
 
 // ✅ CLOUDINARY CONFIGURATION (SECURED WITH ENV VARIABLES)
-// ⚠️ MOVE YOUR CLOUDINARY CREDENTIALS TO YOUR .env FILE IMMEDIATELY!
-// .env example:
-// CLOUDINARY_CLOUD_NAME=your_cloud_name
-// CLOUDINARY_API_KEY=234947822885619
-// CLOUDINARY_API_SECRET=NOJzLThTZ4Q9SQq1f0ToIdDzFRw
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME, 
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -58,17 +53,28 @@ const allowedOrigins = [
   'https://sulaitek1-git-main-zantechs-projects.vercel.app'
 ];
 
-app.use(cors({
+const corsOptions = {
   origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, Postman, or server-to-server)
     if (!origin) return callback(null, true);
+    
     if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      // 🚨 CRITICAL FIX: Use `false` instead of `new Error()`
+      // Throwing an error crashes the preflight response, causing the 0 B transferred bug
+      callback(null, false); 
     }
   },
   credentials: true
-}));
+};
+
+// Apply CORS middleware
+app.use(cors(corsOptions));
+
+// 🚨 BONUS FIX: Explicitly handle preflight OPTIONS requests
+// This ensures browsers asking for permission via OPTIONS get a proper 204 response
+app.options('*', cors(corsOptions));
 
 app.use(express.json());
 
@@ -86,7 +92,6 @@ app.use('/api/activities', activityRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
 // ✅ SECURED IMAGE UPLOAD ROUTE
-// Only authenticated users with "manage_products" permission can upload
 app.post('/api/upload', protect, requirePermission('manage_products'), upload.array('images', 10), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
@@ -120,7 +125,6 @@ async function seedDemoUsers() {
   const demoAccounts = [
     { name: "Sulaitek Communication Admin", email: "admin@Sulaitek Communication.com", phone: "+23481100001", password: "admin123", role: "admin", isVerified: true },
     { name: "Demo User", email: "user@Sulaitek Communication.com", phone: "+2348000000002", password: "user123", role: "user", isVerified: true },
-    // ✅ NEW: Seed a Sales Rep so you can test the new permission system
     { 
       name: "Demo Sales Rep", 
       email: "sales@Sulaitek Communication.com", 
@@ -128,7 +132,7 @@ async function seedDemoUsers() {
       password: "sales123", 
       role: "sales_rep", 
       isVerified: true, 
-      permissions: ["manage_products", "manage_orders", "manage_categories"] // Example permissions
+      permissions: ["manage_products", "manage_orders", "manage_categories"]
     }
   ];
 
@@ -142,8 +146,6 @@ async function seedDemoUsers() {
         await User.create(acc);
         console.log(`  🌱 Seeded: ${acc.email} (${acc.role})`);
       } else {
-        // Optional: Update existing seed accounts if you add new fields (like permissions)
-        // This ensures your demo sales rep gets the new permissions array even if the email already exists
         await User.updateOne({ email: acc.email }, { $set: { permissions: acc.permissions || [] } });
         console.log(`  ⏭️ Skipped/Updated: ${acc.email} already exists`);
       }

@@ -124,7 +124,7 @@ app.post('/api/upload', protect, requirePermission('manage_products'), upload.ar
 // Seed demo users
 async function seedDemoUsers() {
   const demoAccounts = [
-    { name: "All-About Communication Investment Admin", email: "admin@email.com", phone: "+23481100001", password: "admin123", role: "admin", isVerified: true },
+    { name: "All-About Communication Investment", email: "admin@email.com", phone: "+23481100001", password: "admin123", role: "admin", isVerified: true },
     { name: "Demo User", email: "user@All-About Communication Investment.com", phone: "+2348000000002", password: "user123", role: "user", isVerified: true },
     // ✅ NEW: Seed a Sales Rep so you can test the new permission system
     { 

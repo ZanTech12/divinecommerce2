@@ -31,11 +31,6 @@ import streamifier from 'streamifier';
 const app = express();
 
 // ✅ CLOUDINARY CONFIGURATION (SECURED WITH ENV VARIABLES)
-// ⚠️ MOVE YOUR CLOUDINARY CREDENTIALS TO YOUR .env FILE IMMEDIATELY!
-// .env example:
-// CLOUDINARY_CLOUD_NAME=your_cloud_name
-// CLOUDINARY_API_KEY=234947822885619
-// CLOUDINARY_API_SECRET=NOJzLThTZ4Q9SQq1f0ToIdDzFRw
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME, 
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -46,15 +41,12 @@ cloudinary.config({
 const upload = multer();
 
 // ✅ UPDATED CORS CONFIGURATION
-// ✅ UPDATED CORS CONFIGURATION
 const allowedOrigins = [
   // Local development IPs and ports
   'http://172.29.136.57:3000',
   'http://192.168.1.15:5173',
   'http://localhost:3000',
   'http://localhost:5173'
-  // Note: We removed the hardcoded Vercel URLs because the 
-  // corsOptions below automatically allows ANY .vercel.app URL!
 ];
 
 const corsOptions = {
@@ -65,10 +57,14 @@ const corsOptions = {
     // Check if it's a local IP
     const isLocal = allowedOrigins.includes(origin);
     
-       // ✅ NEW: Dynamically allow your custom domain and subdomains (e.g., www.okispecial.com.ng)
+    // 🚀 CRITICAL: Dynamically allow ANY Vercel deployment URL
+    const isVercel = origin.endsWith('.vercel.app');
+
+    // ✅ NEW: Dynamically allow your custom domain and subdomains (e.g., www.okispecial.com.ng)
     const isCustomDomain = origin === 'https://okispecial.com.ng' || origin.endsWith('.okispecial.com.ng');
     
-    if (isLocal || isVercel) {
+    // If it's local, a Vercel URL, or your custom domain, allow it
+    if (isLocal || isVercel || isCustomDomain) {
       callback(null, true);
     } else {
       callback(null, false); 

@@ -124,12 +124,12 @@ app.post('/api/upload', protect, requirePermission('manage_products'), upload.ar
 // Seed demo users
 async function seedDemoUsers() {
   const demoAccounts = [
-    { name: "Sulaitek Communication Admin", email: "admin@Sulaitek Communication.com", phone: "+23481100001", password: "admin123", role: "admin", isVerified: true },
-    { name: "Demo User", email: "user@Sulaitek Communication.com", phone: "+2348000000002", password: "user123", role: "user", isVerified: true },
+    { name: "All-About Communication Investment Admin", email: "admin@email.com", phone: "+23481100001", password: "admin123", role: "admin", isVerified: true },
+    { name: "Demo User", email: "user@All-About Communication Investment.com", phone: "+2348000000002", password: "user123", role: "user", isVerified: true },
     // ✅ NEW: Seed a Sales Rep so you can test the new permission system
     { 
       name: "Demo Sales Rep", 
-      email: "sales@Sulaitek Communication.com", 
+      email: "sales@All-About Communication Investment.com", 
       phone: "+2348000000003", 
       password: "sales123", 
       role: "sales_rep", 

@@ -65,8 +65,8 @@ const corsOptions = {
     // Check if it's a local IP
     const isLocal = allowedOrigins.includes(origin);
     
-    // 🚀 CRITICAL: Dynamically allow ANY Vercel deployment URL
-    const isVercel = origin.endsWith('.vercel.app');
+       // ✅ NEW: Dynamically allow your custom domain and subdomains (e.g., www.okispecial.com.ng)
+    const isCustomDomain = origin === 'https://okispecial.com.ng' || origin.endsWith('.okispecial.com.ng');
     
     if (isLocal || isVercel) {
       callback(null, true);

@@ -46,30 +46,39 @@ cloudinary.config({
 const upload = multer();
 
 // ✅ UPDATED CORS CONFIGURATION
+// ✅ UPDATED CORS CONFIGURATION
 const allowedOrigins = [
-  // Local development
+  // Local development IPs and ports
   'http://172.29.136.57:3000',
   'http://192.168.1.15:5173',
   'http://localhost:3000',
-  'http://localhost:5173',
-  
-  // Production & Preview Vercel deployments
-  'https://sulaitek1.vercel.app',
-  'https://www.sulaitek1.vercel.app'
-  'https://sulaitek1-git-main-zantechs-projects.vercel.app'
+  'http://localhost:5173'
+  // Note: We removed the hardcoded Vercel URLs because the 
+  // corsOptions below automatically allows ANY .vercel.app URL!
 ];
 
-app.use(cors({
+const corsOptions = {
   origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, Postman, curl)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+    
+    // Check if it's a local IP
+    const isLocal = allowedOrigins.includes(origin);
+    
+    // 🚀 CRITICAL: Dynamically allow ANY Vercel deployment URL
+    const isVercel = origin.endsWith('.vercel.app');
+    
+    if (isLocal || isVercel) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(null, false); 
     }
   },
   credentials: true
-}));
+};
+
+// Apply CORS
+app.use(cors(corsOptions));
 
 app.use(express.json());
 

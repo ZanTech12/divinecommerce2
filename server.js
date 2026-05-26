@@ -124,7 +124,7 @@ app.post('/api/upload', protect, requirePermission('manage_products'), upload.ar
 // Seed demo users
 async function seedDemoUsers() {
   const demoAccounts = [
-    { name: "AFOO TECHNOLOGY", email: "admin@email.com", phone: "+23481100001", password: "admin123", role: "admin", isVerified: true },
+    { name: "AFOO TECHNOLOGY", email: "afoo@email.com", phone: "+23481100001", password: "adminafoo123", role: "admin", isVerified: true },
     { name: "Demo User", email: "user@AFOO TECHNOLOGY.com", phone: "+2348000000002", password: "user123", role: "user", isVerified: true },
     // ✅ NEW: Seed a Sales Rep so you can test the new permission system
     { 

@@ -61,7 +61,7 @@ const corsOptions = {
     const isVercel = origin.endsWith('.vercel.app');
 
     // ✅ NEW: Dynamically allow your custom domain and subdomains (e.g., www.okispecial.com.ng)
-    const isCustomDomain = origin === 'https://afootechnology.com.ng' || origin.endsWith('.okispecial.com.ng');
+    const isCustomDomain = origin === 'https://afootechnology.com.ng' || origin.endsWith('.afootechnology.com.ng');
     
     // If it's local, a Vercel URL, or your custom domain, allow it
     if (isLocal || isVercel || isCustomDomain) {

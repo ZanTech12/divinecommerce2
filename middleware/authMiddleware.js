@@ -1,179 +1,300 @@
+
 // middleware/authMiddleware.js
+
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error("FATAL ERROR: JWT_SECRET environment variable is not defined.");
-}
+// Get JWT_SECRET when needed instead of during module import.
+// This allows dotenv to load before authentication requests.
+const getJWTSecret = () => {
+  const secret = process.env.JWT_SECRET;
+
+  if (!secret) {
+    throw new Error(
+      'FATAL ERROR: JWT_SECRET environment variable is not defined.'
+    );
+  }
+
+  return secret;
+};
+
+// ==========================================
+// PROTECT ROUTES
+// ==========================================
 
 export const protect = (req, res, next) => {
   try {
+    const JWT_SECRET = getJWTSecret();
+
     const header = req.headers.authorization;
+
     if (!header || !header.startsWith('Bearer ')) {
-      return res.status(401).json({ message: 'No token provided' });
+      return res.status(401).json({
+        success: false,
+        message: 'No token provided'
+      });
     }
-    
+
     const token = header.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
-    
-    req.user = { 
+
+    const decoded = jwt.verify(token, JWT_SECRET, {
+      algorithms: ['HS256']
+    });
+
+    req.user = {
       _id: decoded.id,
-      role: decoded.role 
+      role: decoded.role
     };
-    
+
     next();
+
   } catch (error) {
-    return res.status(401).json({ message: 'Invalid or expired token' });
+    if (error.message.includes('JWT_SECRET')) {
+      console.error('JWT configuration error:', error.message);
+
+      return res.status(500).json({
+        success: false,
+        message: 'Server authentication configuration error.'
+      });
+    }
+
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid or expired token'
+    });
   }
 };
+
+// ==========================================
+// ADMIN ONLY
+// ==========================================
 
 export const isAdmin = async (req, res, next) => {
   try {
     if (!req.user || !req.user._id) {
-      return res.status(401).json({ success: false, message: 'Not authorized, please log in' });
+      return res.status(401).json({
+        success: false,
+        message: 'Not authorized, please log in'
+      });
     }
 
-    const freshUser = await User.findById(req.user._id).select('role').lean();
-    
+    const freshUser = await User.findById(req.user._id)
+      .select('role')
+      .lean();
+
     if (!freshUser) {
-      return res.status(401).json({ success: false, message: 'User not found' });
+      return res.status(401).json({
+        success: false,
+        message: 'User not found'
+      });
     }
-    
+
     if (freshUser.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Admin access required' });
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required'
+      });
     }
-    
-    req.user = { ...req.user, role: freshUser.role };
+
+    req.user = {
+      ...req.user,
+      role: freshUser.role
+    };
+
     next();
+
   } catch (error) {
     console.error('isAdmin middleware error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
   }
 };
+
+// ==========================================
+// ENGINEER OR ADMIN
+// ==========================================
 
 export const isEngineer = async (req, res, next) => {
   try {
     if (!req.user || !req.user._id) {
-      return res.status(401).json({ success: false, message: 'Not authorized, please log in' });
+      return res.status(401).json({
+        success: false,
+        message: 'Not authorized, please log in'
+      });
     }
 
-    const freshUser = await User.findById(req.user._id).select('role').lean();
-    
+    const freshUser = await User.findById(req.user._id)
+      .select('role')
+      .lean();
+
     if (!freshUser) {
-      return res.status(401).json({ success: false, message: 'User not found' });
+      return res.status(401).json({
+        success: false,
+        message: 'User not found'
+      });
     }
-    
-    if (freshUser.role !== 'engineer' && freshUser.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Engineer or Admin access required' });
+
+    if (
+      freshUser.role !== 'engineer' &&
+      freshUser.role !== 'admin'
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Engineer or Admin access required'
+      });
     }
-    
-    req.user = { ...req.user, role: freshUser.role };
+
+    req.user = {
+      ...req.user,
+      role: freshUser.role
+    };
+
     next();
+
   } catch (error) {
     console.error('isEngineer middleware error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
   }
 };
 
-/**
- * Admin OR Sales Rep can pass.
- * Use this on general admin routes that don't require granular permission checks.
- */
+// ==========================================
+// ADMIN OR SALES REPRESENTATIVE
+// ==========================================
+
 export const isAdminOrSalesRep = async (req, res, next) => {
   try {
     if (!req.user || !req.user._id) {
-      return res.status(401).json({ success: false, message: 'Not authorized, please log in' });
+      return res.status(401).json({
+        success: false,
+        message: 'Not authorized, please log in'
+      });
     }
 
-    const freshUser = await User.findById(req.user._id).select('role permissions').lean();
-    
+    const freshUser = await User.findById(req.user._id)
+      .select('role permissions')
+      .lean();
+
     if (!freshUser) {
-      return res.status(401).json({ success: false, message: 'User not found' });
+      return res.status(401).json({
+        success: false,
+        message: 'User not found'
+      });
     }
-    
-    if (freshUser.role !== 'admin' && freshUser.role !== 'sales_rep') {
-      return res.status(403).json({ success: false, message: 'Admin or Sales Rep access required' });
+
+    if (
+      freshUser.role !== 'admin' &&
+      freshUser.role !== 'sales_rep'
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin or Sales Rep access required'
+      });
     }
-    
-    // Attach permissions to req.user so downstream controllers can use them if needed
-    req.user = { 
-      ...req.user, 
-      role: freshUser.role, 
-      permissions: freshUser.permissions || [] 
+
+    req.user = {
+      ...req.user,
+      role: freshUser.role,
+      permissions: freshUser.permissions || []
     };
-    
+
     next();
+
   } catch (error) {
     console.error('isAdminOrSalesRep middleware error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
   }
 };
 
-/**
- * Permission-based middleware factory.
- * Admin ALWAYS passes (full access).
- * Sales Rep passes ONLY if they have the required permission.
- * Other roles are blocked.
- *
- * Usage:
- *   router.get("/", protect, requirePermission("manage_users"), handler)
- *   router.get("/", protect, requirePermission("manage_users", "manage_orders"), handler)  // OR logic
- */
+// ==========================================
+// PERMISSION-BASED MIDDLEWARE
+// ==========================================
+
 export const requirePermission = (...requiredPermissions) => {
   return async (req, res, next) => {
     try {
       if (!req.user || !req.user._id) {
-        return res.status(401).json({ success: false, message: 'Not authenticated.' });
+        return res.status(401).json({
+          success: false,
+          message: 'Not authenticated.'
+        });
       }
 
-      // Fetch fresh user data including role and permissions from DB
-      // This ensures that if an admin revokes a permission, it takes effect immediately
-      const freshUser = await User.findById(req.user._id).select('role permissions').lean();
+      // Fetch fresh user data from the database.
+      const freshUser = await User.findById(req.user._id)
+        .select('role permissions')
+        .lean();
 
       if (!freshUser) {
-        return res.status(401).json({ success: false, message: 'User not found.' });
+        return res.status(401).json({
+          success: false,
+          message: 'User not found.'
+        });
       }
 
-      // Update req.user with fresh DB data
-      req.user = { 
-        ...req.user, 
-        role: freshUser.role, 
-        permissions: freshUser.permissions || [] 
+      // Update request user with fresh database information.
+      req.user = {
+        ...req.user,
+        role: freshUser.role,
+        permissions: freshUser.permissions || []
       };
 
-      // Admin always has full access
+      // Admin always has full access.
       if (freshUser.role === 'admin') {
         return next();
       }
 
-      // Sales rep: check if they have at least ONE of the required permissions
+      // Sales representative must have at least one permission.
       if (freshUser.role === 'sales_rep') {
         const hasPermission = requiredPermissions.some((perm) =>
           freshUser.permissions.includes(perm)
         );
-        
+
         if (hasPermission) {
           return next();
         }
-        
+
         return res.status(403).json({
           success: false,
-          message: `Access denied. Required permission: ${requiredPermissions.join(' or ')}.`,
+          message: `Access denied. Required permission: ${requiredPermissions.join(' or ')}.`
         });
       }
 
-      // All other roles (user, engineer, etc.)
+      // Other roles are denied.
       return res.status(403).json({
         success: false,
-        message: 'Access denied.',
+        message: 'Access denied.'
       });
+
     } catch (error) {
       console.error('requirePermission middleware error:', error);
-      res.status(500).json({ success: false, message: 'Server error' });
+
+      res.status(500).json({
+        success: false,
+        message: 'Server error'
+      });
     }
   };
 };
 
-// ✅ UPDATED: Include new middlewares in the default export
-export default { protect, isAdmin, isEngineer, isAdminOrSalesRep, requirePermission };
+// ==========================================
+// DEFAULT EXPORT
+// ==========================================
+
+export default {
+  protect,
+  isAdmin,
+  isEngineer,
+  isAdminOrSalesRep,
+  requirePermission
+};

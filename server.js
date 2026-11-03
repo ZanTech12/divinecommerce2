@@ -2,6 +2,9 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+// Load fallback environment variables
+import './setEnv.js';
+
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
@@ -46,7 +49,8 @@ const allowedOrigins = [
   'http://172.29.136.57:3000',
   'http://192.168.1.15:5173',
   'http://localhost:3000',
-  'http://localhost:5173'
+  'http://localhost:5173',
+  'http://localhost:3001'
 ];
 
 const corsOptions = {
@@ -124,12 +128,12 @@ app.post('/api/upload', protect, requirePermission('manage_products'), upload.ar
 // Seed demo users
 async function seedDemoUsers() {
   const demoAccounts = [
-    { name: "AFOO TECHNOLOGY", email: "afoo@email.com", phone: "+23481100001", password: "adminafoo123", role: "admin", isVerified: true },
-    { name: "Demo User", email: "user@AFOO TECHNOLOGY.com", phone: "+2348000000002", password: "user123", role: "user", isVerified: true },
+    { name: "DIVINE VINE-EDO", email: "admin@email.com", phone: "+23481100001", password: "admin123", role: "admin", isVerified: true },
+    { name: "Demo User", email: "user@DIVINE VINE-EDO.com", phone: "+2348000000002", password: "user123", role: "user", isVerified: true },
     // ✅ NEW: Seed a Sales Rep so you can test the new permission system
     { 
       name: "Demo Sales Rep", 
-      email: "sales@AFOO TECHNOLOGY.com", 
+      email: "sales@DIVINE VINE-EDO.com", 
       phone: "+2348000000003", 
       password: "sales123", 
       role: "sales_rep", 

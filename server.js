@@ -2,8 +2,7 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-// Load fallback environment variables
-import './setEnv.js';
+
 
 import express from 'express';
 import cors from 'cors';

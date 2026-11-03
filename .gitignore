@@ -1,5 +1,7 @@
-# Dependencies
-/node_modules
-
-# Environment variables
+# Environment and sensitive configuration
 .env
+.env.*
+setEnv.js
+
+# Dependencies
+node_modules/

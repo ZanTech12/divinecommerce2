@@ -1,7 +1,7 @@
 // config/permissions.js
 
 /**
- * All available admin page permissions.
+ * All available admin page permission.
  * Admin gets ALL by default.
  * Sales Rep gets ONLY what the admin explicitly grants.
  * General pages don't need any permission — they're accessible to all authenticated users.

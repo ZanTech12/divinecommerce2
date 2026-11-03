@@ -1,332 +1,961 @@
+
 // controllers/authController.js
+
 import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
 import { Resend } from 'resend';
+import { randomInt } from 'crypto';
+
 import InviteToken from '../models/InviteToken.js';
-import Activity from '../models/Activity.js'; // ✅ ADDED: Import Activity Model
+import Activity from '../models/Activity.js';
 
-// ✅ Resend Setup
-const resend = process.env.RESEND_API_KEY 
-  ? new Resend(process.env.RESEND_API_KEY)
-  : null;
+// ==========================================
+// 1. RESEND EMAIL CONFIGURATION
+// ==========================================
 
-if (!resend) {
-  console.error('⚠️ WARNING: RESEND_API_KEY is missing. OTP emails will not be sent.');
-}
+// Initialize Resend lazily.
+// This prevents dotenv import-order problems.
 
-// ✅ Helper: Send OTP Email
-const sendOTPEmail = async (email, name, otp, uniqueId = '') => {
-  if (!resend) throw new Error('RESEND_API_KEY is not configured');
+let resendClient = null;
 
-  const { error } = await resend.emails.send({
-    // 🛠️ CHANGED: Replaced onboarding@resend.dev with your verified domain
-    from: `"${process.env.STORE_NAME || 'AFOO TECHNOLOGY'}" <${process.env.EMAIL_FROM || 'noreply@okispecial.com.ng'}>`,
-    to: email,
-    subject: `Your Email Verification Code ${uniqueId ? `[Ref: ${uniqueId}]` : ''}`,
-    html: `
-      <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-        <h2>Hello ${name},</h2>
-        <p>Thank you for registering! Please verify your email address to continue. Your verification code is:</p>
-        <div style="font-size: 32px; font-weight: bold; color: #f68b1e; letter-spacing: 5px; margin: 20px 0; background: #f9fafb; padding: 15px; text-align: center; border-radius: 8px;">
-          ${otp}
-        </div>
-        <p>This code expires in <strong>10 minutes</strong>.</p>
-        <p>If you didn't create an account, please ignore this email.</p>
-      </div>
-    `,
-  });
+const getResendClient = () => {
 
-  if (error) throw error;
+  const apiKey = process.env.RESEND_API_KEY;
+
+  if (!apiKey) {
+    throw new Error(
+      'RESEND_API_KEY is missing from environment variables.'
+    );
+  }
+
+  if (!resendClient) {
+    resendClient = new Resend(apiKey);
+  }
+
+  return resendClient;
 };
 
-// ✅ Helper: Generate JWT
+// ==========================================
+// 2. HELPER: ESCAPE HTML
+// ==========================================
+
+const escapeHTML = (value = '') => {
+  return String(value).replace(/[&<>"']/g, (character) => {
+    const entities = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;',
+    };
+
+    return entities[character];
+  });
+};
+
+// ==========================================
+// 3. HELPER: GENERATE OTP
+// ==========================================
+
+const generateOTP = () => {
+  return randomInt(100000, 1000000).toString();
+};
+
+// ==========================================
+// 4. HELPER: SEND OTP EMAIL
+// ==========================================
+
+const sendOTPEmail = async (
+  email,
+  name,
+  otp,
+  uniqueId = ''
+) => {
+
+  const resend = getResendClient();
+
+  const senderEmail = process.env.EMAIL_FROM;
+
+  if (!senderEmail) {
+    throw new Error(
+      'EMAIL_FROM is missing from environment variables.'
+    );
+  }
+
+  const storeName =
+    process.env.STORE_NAME || 'DIVINE SOLAR HUB';
+
+  const safeName = escapeHTML(name);
+  const safeStoreName = escapeHTML(storeName);
+
+  try {
+
+    const result = await resend.emails.send({
+
+      from: `${storeName} <${senderEmail}>`,
+
+      to: [email],
+
+      subject: `Your Email Verification Code ${
+        uniqueId ? `[Ref: ${uniqueId}]` : ''
+      }`,
+
+      html: `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>Email Verification</title>
+          </head>
+
+          <body style="
+            margin:0;
+            padding:20px;
+            background:#f4f4f4;
+            font-family:Arial,sans-serif;
+            color:#333;
+          ">
+
+            <div style="
+              max-width:500px;
+              margin:20px auto;
+              padding:30px;
+              background:#ffffff;
+              border-radius:10px;
+            ">
+
+              <h2 style="color:#222;">
+                Hello ${safeName},
+              </h2>
+
+              <p>
+                Thank you for registering with
+                <strong>${safeStoreName}</strong>.
+              </p>
+
+              <p>
+                Please verify your email address using
+                the verification code below.
+              </p>
+
+              <div style="
+                font-size:32px;
+                font-weight:bold;
+                color:#f68b1e;
+                letter-spacing:5px;
+                margin:25px 0;
+                background:#f9fafb;
+                padding:20px;
+                text-align:center;
+                border-radius:8px;
+              ">
+                ${otp}
+              </div>
+
+              <p>
+                This verification code expires in
+                <strong>10 minutes</strong>.
+              </p>
+
+              <p>
+                If you did not create an account,
+                please ignore this email.
+              </p>
+
+              <hr style="
+                border:none;
+                border-top:1px solid #eeeeee;
+                margin:25px 0;
+              " />
+
+              <p style="
+                font-size:13px;
+                color:#777;
+                text-align:center;
+              ">
+                ${safeStoreName}
+              </p>
+
+            </div>
+
+          </body>
+        </html>
+      `
+    });
+
+    if (result.error) {
+
+      console.error('RESEND API ERROR:', result.error);
+
+      throw new Error(
+        result.error.message || 'Resend failed to send the email.'
+      );
+    }
+
+    console.log('OTP EMAIL ACCEPTED BY RESEND:', {
+      recipient: email,
+      emailId: result.data?.id
+    });
+
+    return result.data;
+
+  } catch (error) {
+
+    console.error('OTP EMAIL SENDING ERROR:', {
+      recipient: email,
+      message: error.message
+    });
+
+    throw error;
+  }
+};
+
+// ==========================================
+// 5. HELPER: GENERATE JWT
+// ==========================================
+
 const generateToken = (user) => {
+
+  if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET is missing from environment variables.');
+  }
+
   return jwt.sign(
-    { id: user._id, role: user.role }, 
-    process.env.JWT_SECRET, 
-    { expiresIn: '30d' }
+    {
+      id: user._id,
+      role: user.role
+    },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: process.env.JWT_EXPIRES_IN || '30d'
+    }
   );
 };
 
 // ==========================================
-// 1. REGISTER
+// 6. HELPER: LOG USER ACTIVITY
 // ==========================================
-export const registerUser = async (req, res) => {
-  const { name, email, phone, password } = req.body;
+
+const logActivity = async (
+  type,
+  message,
+  user
+) => {
+
   try {
-    const userExists = await User.findOne({ email });
-    if (userExists) return res.status(400).json({ message: 'User already exists' });
 
-    const phoneExists = await User.findOne({ phone });
-    if (phoneExists) return res.status(400).json({ message: 'Phone number is already in use' });
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
-
-    const user = await User.create({ 
-      name, email, phone, password,
-      isVerified: false,
-      otp,
-      otpExpires
-    });
-
-    console.log(`🔑 OTP for ${email}: ${otp}`);
-
-    try {
-      await sendOTPEmail(email, name, otp);
-    } catch (emailError) {
-      console.error('⚠️ Failed to send OTP email:', emailError.message);
-    }
-    
-    // ✅ ADDED: Log user registration activity (Fire and forget)
-    Activity.create({
-      type: "user",
-      message: `New user registration: ${user.name} (${user.email})`,
+    await Activity.create({
+      type,
+      message,
       referenceId: user._id,
       performedBy: user._id
-    }).catch(err => console.error("Activity Log Error:", err));
-
-    res.status(201).json({
-      _id: user._id, name: user.name, email: user.email, 
-      phone: user.phone, role: user.role, isVerified: user.isVerified,
-      permissions: user.permissions || [],
-      token: generateToken(user)
     });
+
   } catch (error) {
-    console.error(error.stack);
-    if (error.name === 'ValidationError') return res.status(400).json({ message: error.message });
-    res.status(500).json({ message: error.message });
+
+    console.error('ACTIVITY LOG ERROR:', error.message);
+
   }
 };
 
 // ==========================================
-// 2. VERIFY OTP
+// 7. REGISTER USER
 // ==========================================
-export const verifyOtp = async (req, res) => {
-  const { email, otp } = req.body;
+
+export const registerUser = async (req, res) => {
+
+  const {
+    name,
+    email,
+    phone,
+    password
+  } = req.body;
+
   try {
-    const user = await User.findOne({ email }).select('+otp +otpExpires');
-    
-    if (!user) return res.status(404).json({ message: 'User not found' });
 
-    if (user.otp !== otp) {
-      return res.status(400).json({ message: 'Invalid verification code.' });
-    }
-
-    if (new Date() > user.otpExpires) {
-      return res.status(400).json({ message: 'Code has expired. Please request a new one.' });
-    }
-
-    user.isVerified = true;
-    user.otp = undefined;
-    user.otpExpires = undefined;
-    await user.save();
-
-    res.status(200).json({ message: 'Email verified successfully!' });
-  } catch (error) {
-    console.error(error.stack);
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// ==========================================
-// 3. RESEND OTP
-// ==========================================
-export const resendOtp = async (req, res) => {
-  const { email } = req.body;
-  try {
-    const user = await User.findOne({ email }).select('+otp +otpExpires');
-    
-    if (!user) return res.status(404).json({ message: 'User not found' });
-    
-    if (user.isVerified) {
-      return res.status(400).json({ message: 'Email is already verified.' });
-    }
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
-
-    user.otp = otp;
-    user.otpExpires = otpExpires;
-    await user.save();
-
-    console.log(`🔑 New OTP for ${email}: ${otp}`);
-
-    const uniqueId = Date.now().toString().slice(-6);
-
-    try {
-      await sendOTPEmail(email, user.name, otp, uniqueId);
-      res.status(200).json({ message: 'New verification code sent successfully.' });
-    } catch (emailError) {
-      console.error('⚠️ Failed to resend OTP email:', emailError.message);
-      res.status(500).json({ message: 'OTP generated, but failed to send email. Please try again later.' });
-    }
-  } catch (error) {
-    console.error(error.stack);
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// ==========================================
-// 4. LOGIN
-// ==========================================
-export const loginUser = async (req, res) => {
-  const { email, password } = req.body;
-  try {
-    const user = await User.findOne({ email });
-    
-    if (user && (await user.matchPassword(password))) {
-      if (!user.isVerified) {
-        return res.status(403).json({ message: 'Please verify your email address before logging in.' });
-      }
-
-      res.json({
-        _id: user._id, name: user.name, email: user.email, 
-        phone: user.phone, role: user.role,
-        permissions: user.permissions || [],
-        token: generateToken(user)
+    if (!name || !email || !phone || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide all required fields.'
       });
-    } else {
-      res.status(401).json({ message: 'Invalid email or password' });
     }
-  } catch (error) {
-    console.error(error.stack);
-    res.status(500).json({ message: error.message });
-  }
-};
 
-// ==========================================
-// 5. GET PROFILE
-// ==========================================
-export const getProfile = async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id).select("-password -otp -otpExpires");
-    res.json({ 
-      _id: user._id, name: user.name, email: user.email, 
-      phone: user.phone, role: user.role, isVerified: user.isVerified,
-      permissions: user.permissions || []
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const userExists = await User.findOne({
+      email: normalizedEmail
     });
-  } catch (error) {
-    console.error(error.stack);
-    res.status(500).json({ message: error.message });
-  }
-};
 
-// ==========================================
-// 6. REGISTER ENGINEER
-// ==========================================
-export const registerEngineer = async (req, res) => {
-  const { name, email, phone, password, inviteCode } = req.body;
-
-  try {
-    if (!inviteCode) {
+    if (userExists) {
       return res.status(400).json({
         success: false,
-        message: "Engineer invite code is required.",
-      });
-    }
-
-    const tokenRecord = await InviteToken.findOne({ token: inviteCode, isActive: true });
-
-    if (!tokenRecord) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid or already used invite code. Contact admin for access.",
-      });
-    }
-
-    if (new Date() > new Date(tokenRecord.expiresAt)) {
-      tokenRecord.isActive = false;
-      await tokenRecord.save();
-      
-      return res.status(400).json({
-        success: false,
-        message: "This invite code has expired. Please request a new one from admin.",
-      });
-    }
-
-    const emailExists = await User.findOne({ email: email.toLowerCase() });
-    if (emailExists) {
-      return res.status(400).json({
-        success: false,
-        message: "An account with this email already exists.",
+        message: 'User already exists.'
       });
     }
 
     const phoneExists = await User.findOne({ phone });
+
     if (phoneExists) {
       return res.status(400).json({
         success: false,
-        message: "An account with this phone number already exists.",
+        message: 'Phone number is already in use.'
       });
     }
 
-    if (!password || password.length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: "Password must be at least 6 characters.",
-      });
-    }
+    const otp = generateOTP();
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    const otpExpires = new Date(
+      Date.now() + 10 * 60 * 1000
+    );
+
+    // Create user
 
     const user = await User.create({
+
       name,
-      email: email.toLowerCase(),
+      email: normalizedEmail,
       phone,
       password,
-      role: "engineer",
+
       isVerified: false,
+
       otp,
-      otpExpires,
+      otpExpires
+
     });
 
-    console.log(`🔧 Engineer OTP for ${email}: ${otp}`);
+    // Send OTP email
 
-    tokenRecord.isActive = false;
-    tokenRecord.usedBy = user._id;
-    await tokenRecord.save();
+    let emailSent = false;
 
     try {
-      await sendOTPEmail(email, name, otp);
+
+      await sendOTPEmail(
+        normalizedEmail,
+        name,
+        otp
+      );
+
+      emailSent = true;
+
     } catch (emailError) {
-      console.error('⚠️ Failed to send OTP email:', emailError.message);
+
+      console.error(
+        'REGISTRATION EMAIL FAILED:',
+        emailError.message
+      );
+
     }
 
-    // ✅ ADDED: Log engineer registration activity (Fire and forget)
-    Activity.create({
-      type: "user",
-      message: `New engineer registration: ${user.name} (${user.email})`,
-      referenceId: user._id,
-      performedBy: user._id
-    }).catch(err => console.error("Activity Log Error:", err));
+    // Activity logging
 
-    res.status(201).json({
+    logActivity(
+      'user',
+      `New user registration: ${user.name} (${user.email})`,
+      user
+    );
+
+    return res.status(201).json({
+
       success: true,
-      message: "Engineer account created! Please verify your email.",
+
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      isVerified: user.isVerified,
+
+      permissions: user.permissions || [],
+
+      token: generateToken(user),
+
+      emailSent,
+
+      message: emailSent
+        ? 'Registration successful. Verification code sent to your email.'
+        : 'Account created, but email delivery failed. Please request a new verification code.'
+
+    });
+
+  } catch (error) {
+
+    console.error(
+      'REGISTER USER ERROR:',
+      error.stack
+    );
+
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+
+  }
+};
+
+// ==========================================
+// 8. VERIFY OTP
+// ==========================================
+
+export const verifyOtp = async (req, res) => {
+
+  const {
+    email,
+    otp
+  } = req.body;
+
+  try {
+
+    if (!email || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and verification code are required.'
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await User.findOne({
+      email: normalizedEmail
+    }).select('+otp +otpExpires');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.'
+      });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is already verified.'
+      });
+    }
+
+    if (!user.otp || !user.otpExpires) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active verification code. Please request a new one.'
+      });
+    }
+
+    if (user.otp !== String(otp).trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid verification code.'
+      });
+    }
+
+    if (new Date() > new Date(user.otpExpires)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Code has expired. Please request a new one.'
+      });
+    }
+
+    // Verify account
+
+    user.isVerified = true;
+
+    user.otp = undefined;
+    user.otpExpires = undefined;
+
+    await user.save();
+
+    return res.status(200).json({
+
+      success: true,
+
+      message: 'Email verified successfully!'
+
+    });
+
+  } catch (error) {
+
+    console.error(
+      'VERIFY OTP ERROR:',
+      error.stack
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+
+  }
+};
+
+// ==========================================
+// 9. RESEND OTP
+// ==========================================
+
+export const resendOtp = async (req, res) => {
+
+  const { email } = req.body;
+
+  try {
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email address is required.'
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await User.findOne({
+      email: normalizedEmail
+    }).select('+otp +otpExpires');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.'
+      });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is already verified.'
+      });
+    }
+
+    const otp = generateOTP();
+
+    const otpExpires = new Date(
+      Date.now() + 10 * 60 * 1000
+    );
+
+    user.otp = otp;
+    user.otpExpires = otpExpires;
+
+    await user.save();
+
+    const uniqueId = Date.now()
+      .toString()
+      .slice(-6);
+
+    try {
+
+      await sendOTPEmail(
+        normalizedEmail,
+        user.name,
+        otp,
+        uniqueId
+      );
+
+      return res.status(200).json({
+
+        success: true,
+
+        emailSent: true,
+
+        message: 'New verification code sent successfully.'
+
+      });
+
+    } catch (emailError) {
+
+      console.error(
+        'RESEND OTP FAILED:',
+        emailError.message
+      );
+
+      return res.status(500).json({
+
+        success: false,
+
+        emailSent: false,
+
+        message: 'OTP generated, but email delivery failed. Please try again later.',
+
+        error: emailError.message
+
+      });
+
+    }
+
+  } catch (error) {
+
+    console.error(
+      'RESEND OTP ERROR:',
+      error.stack
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+
+  }
+};
+
+// ==========================================
+// 10. LOGIN USER
+// ==========================================
+
+export const loginUser = async (req, res) => {
+
+  const {
+    email,
+    password
+  } = req.body;
+
+  try {
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required.'
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await User.findOne({
+      email: normalizedEmail
+    });
+
+    if (user && (await user.matchPassword(password))) {
+
+      if (!user.isVerified) {
+        return res.status(403).json({
+          success: false,
+          message: 'Please verify your email address before logging in.'
+        });
+      }
+
+      return res.status(200).json({
+
+        success: true,
+
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+
+        permissions: user.permissions || [],
+
+        token: generateToken(user)
+
+      });
+
+    }
+
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid email or password.'
+    });
+
+  } catch (error) {
+
+    console.error(
+      'LOGIN ERROR:',
+      error.stack
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+
+  }
+};
+
+// ==========================================
+// 11. GET PROFILE
+// ==========================================
+
+export const getProfile = async (req, res) => {
+
+  try {
+
+    const user = await User.findById(
+      req.user._id
+    ).select('-password -otp -otpExpires');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.'
+      });
+    }
+
+    return res.status(200).json({
+
+      success: true,
+
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      isVerified: user.isVerified,
+
+      permissions: user.permissions || []
+
+    });
+
+  } catch (error) {
+
+    console.error(
+      'GET PROFILE ERROR:',
+      error.stack
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+
+  }
+};
+
+// ==========================================
+// 12. REGISTER ENGINEER
+// ==========================================
+
+export const registerEngineer = async (req, res) => {
+
+  const {
+    name,
+    email,
+    phone,
+    password,
+    inviteCode
+  } = req.body;
+
+  try {
+
+    if (!name || !email || !phone || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide all required fields.'
+      });
+    }
+
+    if (!inviteCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Engineer invite code is required.'
+      });
+    }
+
+    // Find invitation
+
+    const tokenRecord = await InviteToken.findOne({
+
+      token: inviteCode,
+      isActive: true
+
+    });
+
+    if (!tokenRecord) {
+      return res.status(400).json({
+
+        success: false,
+
+        message: 'Invalid or already used invite code. Contact admin for access.'
+
+      });
+    }
+
+    // Check expiry
+
+    if (
+      !tokenRecord.expiresAt ||
+      new Date() > new Date(tokenRecord.expiresAt)
+    ) {
+
+      tokenRecord.isActive = false;
+
+      await tokenRecord.save();
+
+      return res.status(400).json({
+
+        success: false,
+
+        message: 'This invite code has expired. Please request a new one from admin.'
+
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Check email
+
+    const emailExists = await User.findOne({
+      email: normalizedEmail
+    });
+
+    if (emailExists) {
+      return res.status(400).json({
+
+        success: false,
+
+        message: 'An account with this email already exists.'
+
+      });
+    }
+
+    // Check phone
+
+    const phoneExists = await User.findOne({ phone });
+
+    if (phoneExists) {
+      return res.status(400).json({
+
+        success: false,
+
+        message: 'An account with this phone number already exists.'
+
+      });
+    }
+
+    // Validate password
+
+    if (password.length < 6) {
+      return res.status(400).json({
+
+        success: false,
+
+        message: 'Password must be at least 6 characters.'
+
+      });
+    }
+
+    const otp = generateOTP();
+
+    const otpExpires = new Date(
+      Date.now() + 10 * 60 * 1000
+    );
+
+    // Create engineer account
+
+    const user = await User.create({
+
+      name,
+
+      email: normalizedEmail,
+
+      phone,
+
+      password,
+
+      role: 'engineer',
+
+      isVerified: false,
+
+      otp,
+
+      otpExpires
+
+    });
+
+    // Consume invitation after account creation.
+    // If email delivery fails, the user can still request
+    // another OTP through the resend OTP endpoint.
+
+    tokenRecord.isActive = false;
+
+    tokenRecord.usedBy = user._id;
+
+    await tokenRecord.save();
+
+    // Send verification email
+
+    let emailSent = false;
+
+    try {
+
+      await sendOTPEmail(
+        normalizedEmail,
+        name,
+        otp
+      );
+
+      emailSent = true;
+
+    } catch (emailError) {
+
+      console.error(
+        'ENGINEER REGISTRATION EMAIL FAILED:',
+        emailError.message
+      );
+
+    }
+
+    // Activity logging
+
+    logActivity(
+      'user',
+      `New engineer registration: ${user.name} (${user.email})`,
+      user
+    );
+
+    return res.status(201).json({
+
+      success: true,
+
+      message: emailSent
+        ? 'Engineer account created! Verification code sent to your email.'
+        : 'Engineer account created, but email delivery failed. Please request a new verification code.',
+
+      emailSent,
+
       user: {
+
         _id: user._id,
         name: user.name,
         email: user.email,
         phone: user.phone,
         role: user.role,
         isVerified: user.isVerified,
-        permissions: user.permissions || [],
+
+        permissions: user.permissions || []
+
       },
-      token: generateToken(user),
+
+      token: generateToken(user)
+
     });
+
   } catch (error) {
-    console.error("Engineer register error:", error.stack);
-    if (error.name === "ValidationError") {
+
+    console.error(
+      'ENGINEER REGISTRATION ERROR:',
+      error.stack
+    );
+
+    if (error.name === 'ValidationError') {
       return res.status(400).json({
+
         success: false,
-        message: error.message,
+
+        message: error.message
+
       });
     }
-    res.status(500).json({
+
+    return res.status(500).json({
+
       success: false,
-      message: "Registration failed. Please try again.",
+
+      message: 'Registration failed. Please try again.'
+
     });
+
   }
 };

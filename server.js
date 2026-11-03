@@ -49,7 +49,8 @@ const allowedOrigins = [
   'http://192.168.1.15:5173',
   'http://localhost:3000',
   'http://localhost:5173',
-  'http://localhost:3001'
+  'http://localhost:3001',
+  'https://shop.divinesolarhub.com'
 ];
 
 const corsOptions = {

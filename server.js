@@ -1,4 +1,3 @@
-
 // ==========================================
 // 1. ENVIRONMENT CONFIGURATION
 // ==========================================
@@ -26,6 +25,7 @@ import inviteRoutes from './routes/inviteRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import activityRoutes from './routes/activityRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
+import whatsappRoutes from './routes/whatsappRoutes.js';
 
 import {
   protect,
@@ -75,11 +75,9 @@ const allowedOrigins = [
   'https://shop.divinesolarhub.com',
   'https://divinesolarhub.com',
   'https://www.divinesolarhub.com',
-
   'http://localhost:3000',
   'http://localhost:5173',
   'http://localhost:3001',
-
   'http://172.29.136.57:3000',
   'http://192.168.1.15:5173'
 ];
@@ -97,16 +95,14 @@ const allAllowedOrigins = [
 
 const corsOptions = {
   origin: (origin, callback) => {
-
-    // Allow requests without an Origin header
-    // Such as server-to-server and command-line requests.
+    // Allow server-to-server, webhook and command-line requests.
     if (!origin) {
       return callback(null, true);
     }
 
     const isAllowed = allAllowedOrigins.includes(origin);
 
-    // Optional Vercel preview deployment support
+    // Optional Vercel preview deployment support.
     const isVercel =
       process.env.ALLOW_VERCEL_ORIGINS === 'true' &&
       /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin);
@@ -116,7 +112,6 @@ const corsOptions = {
     }
 
     console.warn('CORS blocked:', origin);
-
     return callback(new Error('Not allowed by CORS'));
   },
 
@@ -133,7 +128,8 @@ const corsOptions = {
 
   allowedHeaders: [
     'Content-Type',
-    'Authorization'
+    'Authorization',
+    'X-Hub-Signature-256'
   ],
 
   optionsSuccessStatus: 204
@@ -145,8 +141,17 @@ app.use(cors(corsOptions));
 // 7. BODY PARSERS
 // ==========================================
 
+// Preserve the exact raw JSON body for Meta's
+// X-Hub-Signature-256 verification.
+// This must run before the WhatsApp POST route.
+
 app.use(express.json({
-  limit: '10mb'
+  limit: '10mb',
+  verify: (req, res, buffer) => {
+    if (req.originalUrl?.startsWith('/api/whatsapp/webhook')) {
+      req.rawBody = Buffer.from(buffer);
+    }
+  }
 }));
 
 app.use(express.urlencoded({
@@ -159,81 +164,67 @@ app.use(express.urlencoded({
 // ==========================================
 
 app.get('/api/health', (req, res) => {
-
   res.status(200).json({
     success: true,
     message: 'DIVINE SOLAR HUB API is running.',
     environment: process.env.NODE_ENV || 'development',
     timestamp: new Date().toISOString()
   });
-
 });
 
 // ==========================================
-// 9. DATABASE CONNECTION MIDDLEWARE
+// 9. WHATSAPP WEBHOOK ROUTE
+// ==========================================
+
+// Register before the general /api database middleware.
+// GET verification does not require a MongoDB connection.
+// The controller connects to MongoDB for POST events.
+
+app.use('/api/whatsapp/webhook', whatsappRoutes);
+
+// ==========================================
+// 10. DATABASE CONNECTION MIDDLEWARE
 // ==========================================
 
 // connectDB uses a cached MongoDB connection.
-// This middleware ensures database access before API routes.
+// This middleware ensures database access before regular API routes.
 
 app.use('/api', async (req, res, next) => {
-
   try {
-
     await connectDB();
-
     return next();
-
   } catch (error) {
-
-    console.error(
-      'MongoDB connection error:',
-      error.message
-    );
+    console.error('MongoDB connection error:', error.message);
 
     return res.status(503).json({
       success: false,
       message: 'Database connection failed. Please try again.'
     });
-
   }
-
 });
 
 // ==========================================
-// 10. API ROUTES
+// 11. API ROUTES
 // ==========================================
 
 app.use('/api/auth', authRoutes);
-
 app.use('/api/site-settings', siteSettingsRoutes);
-
 app.use('/api/categories', categoryRoutes);
-
 app.use('/api/products', productRoutes);
-
 app.use('/api/cart', cartRoutes);
-
 app.use('/api/orders', orderRoutes);
-
 app.use('/api/users', userRoutes);
-
 app.use('/api/messages', messageRoutes);
-
 app.use('/api/invites', inviteRoutes);
-
 app.use('/api/payments', paymentRoutes);
-
 app.use('/api/activities', activityRoutes);
-
 app.use('/api/dashboard', dashboardRoutes);
 
 // ==========================================
-// 11. MULTER CONFIGURATION
+// 12. MULTER CONFIGURATION
 // ==========================================
 
 const upload = multer({
-
   storage: multer.memoryStorage(),
 
   limits: {
@@ -242,7 +233,6 @@ const upload = multer({
   },
 
   fileFilter: (req, file, callback) => {
-
     const allowedMimeTypes = [
       'image/jpeg',
       'image/png',
@@ -251,47 +241,33 @@ const upload = multer({
     ];
 
     if (allowedMimeTypes.includes(file.mimetype)) {
-
       callback(null, true);
-
     } else {
-
       callback(
         new Error(
           'Only JPEG, PNG, WEBP and GIF images are allowed.'
         )
       );
-
     }
-
   }
-
 });
 
 // ==========================================
-// 12. SECURED IMAGE UPLOAD
+// 13. SECURED IMAGE UPLOAD
 // ==========================================
 
 app.post(
   '/api/upload',
-
   protect,
-
   requirePermission('manage_products'),
-
   upload.array('images', 10),
-
   async (req, res) => {
-
     try {
-
       if (!req.files || req.files.length === 0) {
-
         return res.status(400).json({
           success: false,
           message: 'No images uploaded.'
         });
-
       }
 
       if (
@@ -299,43 +275,32 @@ app.post(
         !process.env.CLOUDINARY_API_KEY ||
         !process.env.CLOUDINARY_API_SECRET
       ) {
-
         return res.status(500).json({
           success: false,
           message: 'Cloudinary is not configured.'
         });
-
       }
 
       const uploadPromises = req.files.map(file => {
-
         return new Promise((resolve, reject) => {
-
           const uploadStream = cloudinary.uploader.upload_stream(
-
             {
               folder: 'products',
               resource_type: 'image'
             },
-
             (error, result) => {
-
               if (error) {
                 return reject(error);
               }
 
               resolve(result.secure_url);
-
             }
-
           );
 
           streamifier
             .createReadStream(file.buffer)
             .pipe(uploadStream);
-
         });
-
       });
 
       const urls = await Promise.all(uploadPromises);
@@ -345,43 +310,29 @@ app.post(
         message: 'Images uploaded successfully.',
         urls
       });
-
     } catch (error) {
-
-      console.error(
-        'Cloudinary upload error:',
-        error
-      );
+      console.error('Cloudinary upload error:', error);
 
       return res.status(500).json({
         success: false,
         message: 'Image upload failed.'
       });
-
     }
-
   }
 );
 
 // ==========================================
-// 13. DEMO USER SEEDING
+// 14. DEMO USER SEEDING
 // ==========================================
 
 async function seedDemoUsers() {
-
-  // Never seed demo users in production
+  // Never seed demo users in production.
   if (process.env.NODE_ENV === 'production') {
-
-    console.log(
-      'Demo user seeding disabled in production.'
-    );
-
+    console.log('Demo user seeding disabled in production.');
     return;
-
   }
 
   const demoAccounts = [
-
     {
       name: 'DIVINE SOLAR HUB',
       email: 'admin@email.com',
@@ -390,7 +341,6 @@ async function seedDemoUsers() {
       role: 'admin',
       isVerified: true
     },
-
     {
       name: 'Demo User',
       email: 'user@divinesolarhub.com',
@@ -399,7 +349,6 @@ async function seedDemoUsers() {
       role: 'user',
       isVerified: true
     },
-
     {
       name: 'Demo Sales Rep',
       email: 'sales@divinesolarhub.com',
@@ -407,20 +356,16 @@ async function seedDemoUsers() {
       password: 'sales123',
       role: 'sales_rep',
       isVerified: true,
-
       permissions: [
         'manage_products',
         'manage_orders',
         'manage_categories'
       ]
     }
-
   ];
 
   for (const acc of demoAccounts) {
-
     try {
-
       const exists = await User.findOne({
         $or: [
           { email: acc.email },
@@ -429,147 +374,101 @@ async function seedDemoUsers() {
       });
 
       if (!exists) {
-
         await User.create(acc);
-
         console.log(`Seeded: ${acc.email}`);
-
       } else {
-
         console.log(`Skipped: ${acc.email}`);
-
       }
-
     } catch (error) {
-
       console.error(
         `Demo user error (${acc.email}):`,
         error.message
       );
-
     }
-
   }
-
 }
 
 // ==========================================
-// 14. 404 HANDLER
+// 15. 404 HANDLER
 // ==========================================
 
 app.use((req, res) => {
-
   res.status(404).json({
     success: false,
     message: 'API route not found.',
     path: req.originalUrl
   });
-
 });
 
 // ==========================================
-// 15. GLOBAL ERROR HANDLER
+// 16. GLOBAL ERROR HANDLER
 // ==========================================
 
 app.use((err, req, res, next) => {
-
-  console.error(
-    'Server Error:',
-    err.message
-  );
+  console.error('Server Error:', err.message);
 
   if (err instanceof multer.MulterError) {
-
     return res.status(400).json({
       success: false,
       message: err.message
     });
-
   }
 
   if (err.message?.startsWith('Only JPEG')) {
-
     return res.status(400).json({
       success: false,
       message: err.message
     });
-
   }
 
   if (err.message === 'Not allowed by CORS') {
-
     return res.status(403).json({
       success: false,
       message: 'Origin not allowed by CORS.'
     });
-
   }
 
   return res.status(500).json({
     success: false,
     message: 'Internal server error.'
   });
-
 });
 
 // ==========================================
-// 16. LOCAL DEVELOPMENT SERVER
+// 17. LOCAL DEVELOPMENT SERVER
 // ==========================================
 
 const PORT = process.env.PORT || 5000;
 
 async function startServer() {
-
   try {
-
-    // Connect to MongoDB first
     await connectDB();
-
     console.log('MongoDB connected successfully.');
 
-    // Seed demo accounts in development
     await seedDemoUsers();
 
     app.listen(PORT, '0.0.0.0', () => {
-
       console.log('====================================');
-
       console.log('DIVINE SOLAR HUB API STARTED');
-
       console.log(`PORT: ${PORT}`);
-
-      console.log(
-        `ENV: ${process.env.NODE_ENV || 'development'}`
-      );
-
+      console.log(`ENV: ${process.env.NODE_ENV || 'development'}`);
       console.log('====================================');
-
     });
-
   } catch (error) {
-
-    console.error(
-      'Server startup failed:',
-      error.message
-    );
-
+    console.error('Server startup failed:', error.message);
     process.exit(1);
-
   }
-
 }
 
 // ==========================================
-// 17. VERCEL + LOCAL COMPATIBILITY
+// 18. VERCEL + LOCAL COMPATIBILITY
 // ==========================================
 
-// Vercel handles the Express application as a
-// serverless function. Do not start app.listen() there.
+// Vercel handles the Express application as a serverless
+// function. Do not start app.listen() there.
 
 if (!process.env.VERCEL) {
-
   startServer();
-
 }
 
 export default app;

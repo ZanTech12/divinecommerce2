@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 
 const { Schema } = mongoose;
@@ -168,11 +169,11 @@ const orderSchema = new Schema({
     default: null
   },
 
+  // Monnify references
+  // Do not use unique+sparse with default null.
   monnifyPaymentReference: {
     type: String,
-    default: null,
-    unique: true,
-    sparse: true
+    default: null
   },
 
   monnifyTransactionReference: {
@@ -263,7 +264,8 @@ const orderSchema = new Schema({
 // Preserve existing Paystack and coins logic.
 // ==========================================
 
-orderSchema.pre("validate", function (next) {
+orderSchema.pre("validate", function () {
+
   if (
     this.paymentMethod === "paystack" &&
     this.paystackReference
@@ -288,7 +290,6 @@ orderSchema.pre("validate", function (next) {
     }
   }
 
-  next();
 });
 
 export default mongoose.model("Order", orderSchema);

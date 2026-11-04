@@ -75,9 +75,11 @@ const allowedOrigins = [
   'https://shop.divinesolarhub.com',
   'https://divinesolarhub.com',
   'https://www.divinesolarhub.com',
+
   'http://localhost:3000',
   'http://localhost:5173',
   'http://localhost:3001',
+
   'http://172.29.136.57:3000',
   'http://192.168.1.15:5173'
 ];
@@ -95,7 +97,9 @@ const allAllowedOrigins = [
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow server-to-server, webhook and command-line requests.
+
+    // Allow requests without an Origin header.
+    // This includes server-to-server and command-line requests.
     if (!origin) {
       return callback(null, true);
     }
@@ -112,6 +116,7 @@ const corsOptions = {
     }
 
     console.warn('CORS blocked:', origin);
+
     return callback(new Error('Not allowed by CORS'));
   },
 
@@ -128,8 +133,7 @@ const corsOptions = {
 
   allowedHeaders: [
     'Content-Type',
-    'Authorization',
-    'X-Hub-Signature-256'
+    'Authorization'
   ],
 
   optionsSuccessStatus: 204
@@ -141,14 +145,21 @@ app.use(cors(corsOptions));
 // 7. BODY PARSERS
 // ==========================================
 
-// Preserve the exact raw JSON body for Meta's
-// X-Hub-Signature-256 verification.
-// This must run before the WhatsApp POST route.
+// Preserve the original request body for webhook signature
+// verification. Monnify uses this raw body to validate its
+// webhook signature in production.
 
 app.use(express.json({
   limit: '10mb',
+
   verify: (req, res, buffer) => {
-    if (req.originalUrl?.startsWith('/api/whatsapp/webhook')) {
+    const isWhatsAppWebhook =
+      req.originalUrl?.startsWith('/api/whatsapp/webhook');
+
+    const isMonnifyWebhook =
+      req.originalUrl?.startsWith('/api/payments/monnify/webhook');
+
+    if (isWhatsAppWebhook || isMonnifyWebhook) {
       req.rawBody = Buffer.from(buffer);
     }
   }
@@ -176,9 +187,8 @@ app.get('/api/health', (req, res) => {
 // 9. WHATSAPP WEBHOOK ROUTE
 // ==========================================
 
-// Register before the general /api database middleware.
-// GET verification does not require a MongoDB connection.
-// The controller connects to MongoDB for POST events.
+// Keep this before the general /api database middleware,
+// as in the existing WhatsApp integration.
 
 app.use('/api/whatsapp/webhook', whatsappRoutes);
 
@@ -187,14 +197,19 @@ app.use('/api/whatsapp/webhook', whatsappRoutes);
 // ==========================================
 
 // connectDB uses a cached MongoDB connection.
-// This middleware ensures database access before regular API routes.
+// This middleware ensures database access before API routes.
 
 app.use('/api', async (req, res, next) => {
   try {
     await connectDB();
+
     return next();
+
   } catch (error) {
-    console.error('MongoDB connection error:', error.message);
+    console.error(
+      'MongoDB connection error:',
+      error.message
+    );
 
     return res.status(503).json({
       success: false,
@@ -208,16 +223,33 @@ app.use('/api', async (req, res, next) => {
 // ==========================================
 
 app.use('/api/auth', authRoutes);
+
 app.use('/api/site-settings', siteSettingsRoutes);
+
 app.use('/api/categories', categoryRoutes);
+
 app.use('/api/products', productRoutes);
+
 app.use('/api/cart', cartRoutes);
+
 app.use('/api/orders', orderRoutes);
+
 app.use('/api/users', userRoutes);
+
 app.use('/api/messages', messageRoutes);
+
 app.use('/api/invites', inviteRoutes);
+
+// Includes:
+// GET  /api/payments/balance
+// POST /api/payments/monnify/initialize
+// GET  /api/payments/monnify/verify/:paymentReference
+// POST /api/payments/monnify/webhook
+
 app.use('/api/payments', paymentRoutes);
+
 app.use('/api/activities', activityRoutes);
+
 app.use('/api/dashboard', dashboardRoutes);
 
 // ==========================================
@@ -258,9 +290,13 @@ const upload = multer({
 
 app.post(
   '/api/upload',
+
   protect,
+
   requirePermission('manage_products'),
+
   upload.array('images', 10),
+
   async (req, res) => {
     try {
       if (!req.files || req.files.length === 0) {
@@ -288,6 +324,7 @@ app.post(
               folder: 'products',
               resource_type: 'image'
             },
+
             (error, result) => {
               if (error) {
                 return reject(error);
@@ -310,8 +347,12 @@ app.post(
         message: 'Images uploaded successfully.',
         urls
       });
+
     } catch (error) {
-      console.error('Cloudinary upload error:', error);
+      console.error(
+        'Cloudinary upload error:',
+        error
+      );
 
       return res.status(500).json({
         success: false,
@@ -326,9 +367,13 @@ app.post(
 // ==========================================
 
 async function seedDemoUsers() {
+
   // Never seed demo users in production.
   if (process.env.NODE_ENV === 'production') {
-    console.log('Demo user seeding disabled in production.');
+    console.log(
+      'Demo user seeding disabled in production.'
+    );
+
     return;
   }
 
@@ -341,6 +386,7 @@ async function seedDemoUsers() {
       role: 'admin',
       isVerified: true
     },
+
     {
       name: 'Demo User',
       email: 'user@divinesolarhub.com',
@@ -349,6 +395,7 @@ async function seedDemoUsers() {
       role: 'user',
       isVerified: true
     },
+
     {
       name: 'Demo Sales Rep',
       email: 'sales@divinesolarhub.com',
@@ -356,6 +403,7 @@ async function seedDemoUsers() {
       password: 'sales123',
       role: 'sales_rep',
       isVerified: true,
+
       permissions: [
         'manage_products',
         'manage_orders',
@@ -375,10 +423,13 @@ async function seedDemoUsers() {
 
       if (!exists) {
         await User.create(acc);
+
         console.log(`Seeded: ${acc.email}`);
+
       } else {
         console.log(`Skipped: ${acc.email}`);
       }
+
     } catch (error) {
       console.error(
         `Demo user error (${acc.email}):`,
@@ -405,7 +456,10 @@ app.use((req, res) => {
 // ==========================================
 
 app.use((err, req, res, next) => {
-  console.error('Server Error:', err.message);
+  console.error(
+    'Server Error:',
+    err.message
+  );
 
   if (err instanceof multer.MulterError) {
     return res.status(400).json({
@@ -442,20 +496,34 @@ const PORT = process.env.PORT || 5000;
 
 async function startServer() {
   try {
+    // Connect to MongoDB first.
     await connectDB();
+
     console.log('MongoDB connected successfully.');
 
+    // Seed demo accounts in development.
     await seedDemoUsers();
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log('====================================');
+
       console.log('DIVINE SOLAR HUB API STARTED');
+
       console.log(`PORT: ${PORT}`);
-      console.log(`ENV: ${process.env.NODE_ENV || 'development'}`);
+
+      console.log(
+        `ENV: ${process.env.NODE_ENV || 'development'}`
+      );
+
       console.log('====================================');
     });
+
   } catch (error) {
-    console.error('Server startup failed:', error.message);
+    console.error(
+      'Server startup failed:',
+      error.message
+    );
+
     process.exit(1);
   }
 }
@@ -464,8 +532,8 @@ async function startServer() {
 // 18. VERCEL + LOCAL COMPATIBILITY
 // ==========================================
 
-// Vercel handles the Express application as a serverless
-// function. Do not start app.listen() there.
+// Vercel handles the Express application as a
+// serverless function. Do not start app.listen() there.
 
 if (!process.env.VERCEL) {
   startServer();

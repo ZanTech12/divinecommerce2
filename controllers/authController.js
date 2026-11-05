@@ -1,56 +1,28 @@
-
 // controllers/authController.js
 
 import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
 import { Resend } from 'resend';
 import { randomInt } from 'crypto';
-
 import InviteToken from '../models/InviteToken.js';
 import Activity from '../models/Activity.js';
 
 // ==========================================
-// 1. RESEND EMAIL CONFIGURATION
+// RESEND EMAIL CONFIGURATION
 // ==========================================
 
-let resendClient = null;
+const resend = process.env.RESEND_API_KEY
+  ? new Resend(process.env.RESEND_API_KEY)
+  : null;
 
-const getResendClient = () => {
-  const apiKey = process.env.RESEND_API_KEY;
-
-  if (!apiKey) {
-    throw new Error(
-      'RESEND_API_KEY is missing from environment variables.'
-    );
-  }
-
-  if (!resendClient) {
-    resendClient = new Resend(apiKey);
-  }
-
-  return resendClient;
-};
+if (!resend) {
+  console.error(
+    'WARNING: RESEND_API_KEY is missing. OTP emails will not be sent.'
+  );
+}
 
 // ==========================================
-// 2. HELPER: ESCAPE HTML
-// ==========================================
-
-const escapeHTML = (value = '') => {
-  return String(value).replace(/[&<>"']/g, (character) => {
-    const entities = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;',
-    };
-
-    return entities[character];
-  });
-};
-
-// ==========================================
-// 3. HELPER: GENERATE OTP
+// GENERATE OTP
 // ==========================================
 
 const generateOTP = () => {
@@ -58,224 +30,212 @@ const generateOTP = () => {
 };
 
 // ==========================================
-// 4. HELPER: SEND OTP EMAIL
+// SEND OTP EMAIL
 // ==========================================
 
-const sendOTPEmail = async (
-  email,
-  name,
-  otp,
-  uniqueId = ''
-) => {
-  const resend = getResendClient();
-
-  const senderEmail = process.env.EMAIL_FROM;
-
-  if (!senderEmail) {
-    throw new Error(
-      'EMAIL_FROM is missing from environment variables.'
-    );
+const sendOTPEmail = async (email, name, otp, uniqueId = '') => {
+  if (!resend) {
+    throw new Error('RESEND_API_KEY is not configured.');
   }
 
-  const storeName =
-    process.env.STORE_NAME || 'DIVINE SOLAR HUB';
+  const storeName = process.env.STORE_NAME || 'Divine Solar Hub';
 
-  const safeName = escapeHTML(name);
-  const safeStoreName = escapeHTML(storeName);
+  const { error } = await resend.emails.send({
+    from: `"${storeName}" <${process.env.EMAIL_FROM || 'noreply@shop.divinesolarhub.com'}>`,
+    to: email,
+    subject: `Your ${storeName} Verification Code ${uniqueId ? `[Ref: ${uniqueId}]` : ''}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+        <h2>Hello ${name},</h2>
 
-  try {
-    const result = await resend.emails.send({
-      from: `${storeName} <${senderEmail}>`,
-      to: [email],
+        <p>
+          Thank you for registering with ${storeName}.
+          Use the verification code below to verify your account.
+        </p>
 
-      subject: `Your Email Verification Code ${
-        uniqueId ? `[Ref: ${uniqueId}]` : ''
-      }`,
+        <div style="
+          font-size: 32px;
+          font-weight: bold;
+          color: #f68b1e;
+          letter-spacing: 5px;
+          margin: 20px 0;
+          background: #f9fafb;
+          padding: 15px;
+          text-align: center;
+          border-radius: 8px;
+        ">
+          ${otp}
+        </div>
 
-      html: `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="UTF-8" />
-            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <title>Email Verification</title>
-          </head>
+        <p>This code expires in <strong>10 minutes</strong>.</p>
 
-          <body style="
-            margin:0;
-            padding:20px;
-            background:#f4f4f4;
-            font-family:Arial,sans-serif;
-            color:#333;
-          ">
+        <p>
+          Never share this code with anyone.
+          If you did not request this code, please ignore this email.
+        </p>
 
-            <div style="
-              max-width:500px;
-              margin:20px auto;
-              padding:30px;
-              background:#ffffff;
-              border-radius:10px;
-            ">
+        <p>Thank you for choosing ${storeName}.</p>
+      </div>
+    `,
+  });
 
-              <h2 style="color:#222;">
-                Hello ${safeName},
-              </h2>
-
-              <p>
-                Thank you for registering with
-                <strong>${safeStoreName}</strong>.
-              </p>
-
-              <p>
-                Please verify your email address using
-                the verification code below.
-              </p>
-
-              <div style="
-                font-size:32px;
-                font-weight:bold;
-                color:#f68b1e;
-                letter-spacing:5px;
-                margin:25px 0;
-                background:#f9fafb;
-                padding:20px;
-                text-align:center;
-                border-radius:8px;
-              ">
-                ${otp}
-              </div>
-
-              <p>
-                This verification code expires in
-                <strong>10 minutes</strong>.
-              </p>
-
-              <p>
-                If you did not create an account,
-                please ignore this email.
-              </p>
-
-              <hr style="
-                border:none;
-                border-top:1px solid #eeeeee;
-                margin:25px 0;
-              " />
-
-              <p style="
-                font-size:13px;
-                color:#777;
-                text-align:center;
-              ">
-                ${safeStoreName}
-              </p>
-
-            </div>
-
-          </body>
-        </html>
-      `
-    });
-
-    if (result.error) {
-      console.error('RESEND API ERROR:', result.error);
-
-      throw new Error(
-        result.error.message || 'Resend failed to send the email.'
-      );
-    }
-
-    console.log('OTP EMAIL ACCEPTED BY RESEND:', {
-      recipient: email,
-      emailId: result.data?.id
-    });
-
-    return result.data;
-
-  } catch (error) {
-    console.error('OTP EMAIL SENDING ERROR:', {
-      recipient: email,
-      message: error.message
-    });
-
+  if (error) {
     throw error;
   }
 };
 
 // ==========================================
-// 5. HELPER: GENERATE JWT
+// SEND OTP THROUGH WHATSAPP BOT SERVICE
 // ==========================================
 
-const generateToken = (user) => {
-  if (!process.env.JWT_SECRET) {
+const sendOTPWhatsApp = async (phone, name, otp) => {
+  const botUrl = process.env.WHATSAPP_BOT_URL;
+  const botSecret = process.env.WHATSAPP_BOT_SECRET;
+
+  if (!botUrl || !botSecret) {
     throw new Error(
-      'JWT_SECRET is missing from environment variables.'
+      'WhatsApp bot URL or secret is not configured.'
     );
   }
 
+  if (!phone) {
+    throw new Error(
+      'Customer phone number is missing.'
+    );
+  }
+
+  const response = await fetch(
+    `${botUrl.replace(/\/+$/, '')}/internal/send-otp`,
+    {
+      method: 'POST',
+
+      headers: {
+        'Content-Type': 'application/json',
+        'x-bot-secret': botSecret,
+      },
+
+      body: JSON.stringify({
+        phone,
+        name,
+        otp,
+      }),
+
+      signal: AbortSignal.timeout(60000),
+    }
+  );
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok || !result.success) {
+    throw new Error(
+      result.message || 'WhatsApp OTP delivery failed.'
+    );
+  }
+
+  return result;
+};
+
+// ==========================================
+// SEND OTP THROUGH AVAILABLE CHANNELS
+// ==========================================
+
+const sendOTPToCustomer = async (user, otp, uniqueId = '') => {
+  const results = await Promise.allSettled([
+    sendOTPEmail(
+      user.email,
+      user.name,
+      otp,
+      uniqueId
+    ),
+
+    sendOTPWhatsApp(
+      user.phone,
+      user.name,
+      otp
+    ),
+  ]);
+
+  const emailSent =
+    results[0].status === 'fulfilled';
+
+  const whatsappSent =
+    results[1].status === 'fulfilled';
+
+  if (!emailSent) {
+    console.error(
+      'EMAIL OTP DELIVERY FAILED:',
+      results[0].reason?.message
+    );
+  }
+
+  if (!whatsappSent) {
+    console.error(
+      'WHATSAPP OTP DELIVERY FAILED:',
+      results[1].reason?.message
+    );
+  }
+
+  return {
+    emailSent,
+    whatsappSent,
+    atLeastOneSent: emailSent || whatsappSent,
+  };
+};
+
+// ==========================================
+// GENERATE JWT
+// ==========================================
+
+const generateToken = (user) => {
   return jwt.sign(
     {
       id: user._id,
-      role: user.role
+      role: user.role,
     },
     process.env.JWT_SECRET,
     {
-      expiresIn: process.env.JWT_EXPIRES_IN || '30d'
+      expiresIn: '30d',
     }
   );
 };
 
 // ==========================================
-// 6. HELPER: LOG USER ACTIVITY
+// LOG ACTIVITY
 // ==========================================
 
-const logActivity = async (
-  type,
-  message,
-  user
-) => {
-  try {
-    await Activity.create({
-      type,
-      message,
-      referenceId: user._id,
-      performedBy: user._id
-    });
-
-  } catch (error) {
-    console.error('ACTIVITY LOG ERROR:', error.message);
-  }
+const logActivity = (user, message) => {
+  Activity.create({
+    type: 'user',
+    message,
+    referenceId: user._id,
+    performedBy: user._id,
+  }).catch((error) => {
+    console.error(
+      'Activity Log Error:',
+      error.message
+    );
+  });
 };
 
 // ==========================================
-// 7. REGISTER USER
+// 1. REGISTER CUSTOMER
 // ==========================================
 
 export const registerUser = async (req, res) => {
+  const {
+    name,
+    email,
+    phone,
+    password,
+  } = req.body;
+
   try {
-    const {
-      name,
-      email,
-      phone,
-      password
-    } = req.body;
-
-    if (!name || !email || !phone || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide all required fields.'
-      });
-    }
-
-    const normalizedEmail = String(email).trim().toLowerCase();
-
-    const userExists = await User.findOne({
-      email: normalizedEmail
-    });
+    const userExists = await User.findOne({ email });
 
     if (userExists) {
       return res.status(400).json({
         success: false,
-        message: 'User already exists.'
+        message: 'User already exists.',
       });
     }
 
@@ -284,7 +244,7 @@ export const registerUser = async (req, res) => {
     if (phoneExists) {
       return res.status(400).json({
         success: false,
-        message: 'Phone number is already in use.'
+        message: 'Phone number is already in use.',
       });
     }
 
@@ -296,36 +256,24 @@ export const registerUser = async (req, res) => {
 
     const user = await User.create({
       name,
-      email: normalizedEmail,
+      email,
       phone,
       password,
       isVerified: false,
       otp,
-      otpExpires
+      otpExpires,
     });
 
-    let emailSent = false;
+    // Do not print the OTP in production logs.
 
-    try {
-      await sendOTPEmail(
-        normalizedEmail,
-        name,
-        otp
-      );
-
-      emailSent = true;
-
-    } catch (emailError) {
-      console.error(
-        'REGISTRATION EMAIL FAILED:',
-        emailError.message
-      );
-    }
+    const delivery = await sendOTPToCustomer(
+      user,
+      otp
+    );
 
     logActivity(
-      'user',
-      `New user registration: ${user.name} (${user.email})`,
-      user
+      user,
+      `New user registration: ${user.name} (${user.email})`
     );
 
     return res.status(201).json({
@@ -342,93 +290,76 @@ export const registerUser = async (req, res) => {
 
       token: generateToken(user),
 
-      emailSent,
+      emailSent: delivery.emailSent,
+      whatsappSent: delivery.whatsappSent,
 
-      message: emailSent
-        ? 'Registration successful. Verification code sent to your email.'
-        : 'Account created, but email delivery failed. Please request a new verification code.'
+      requiresVerification: true,
+
+      message: delivery.atLeastOneSent
+        ? 'Registration successful. Your verification code has been sent through the available channels.'
+        : 'Your account was created, but OTP delivery failed. Please request a new verification code.',
     });
 
   } catch (error) {
-    console.error('REGISTER USER ERROR:', {
-      name: error.name,
-      message: error.message,
-      stack: error.stack
-    });
+    console.error(
+      'Registration error:',
+      error.stack
+    );
 
     if (error.name === 'ValidationError') {
       return res.status(400).json({
         success: false,
-        message: error.message
+        message: error.message,
       });
     }
 
     return res.status(500).json({
       success: false,
-      message: 'Registration failed.',
-      ...(process.env.NODE_ENV !== 'production' && {
-        debug: error.message
-      })
+      message: error.message,
     });
   }
 };
 
 // ==========================================
-// 8. VERIFY OTP
+// 2. VERIFY OTP
 // ==========================================
 
 export const verifyOtp = async (req, res) => {
+  const { email, otp } = req.body;
+
   try {
-    const {
-      email,
-      otp
-    } = req.body;
-
-    if (!email || !otp) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email and verification code are required.'
-      });
-    }
-
-    const normalizedEmail = String(email).trim().toLowerCase();
-
     const user = await User.findOne({
-      email: normalizedEmail
+      email,
     }).select('+otp +otpExpires');
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found.'
+        message: 'User not found.',
       });
     }
 
     if (user.isVerified) {
       return res.status(400).json({
         success: false,
-        message: 'Email is already verified.'
+        message: 'Account is already verified.',
       });
     }
 
-    if (!user.otp || !user.otpExpires) {
+    if (!user.otp || user.otp !== String(otp)) {
       return res.status(400).json({
         success: false,
-        message: 'No active verification code. Please request a new one.'
+        message: 'Invalid verification code.',
       });
     }
 
-    if (user.otp !== String(otp).trim()) {
+    if (
+      !user.otpExpires ||
+      Date.now() > new Date(user.otpExpires).getTime()
+    ) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid verification code.'
-      });
-    }
-
-    if (new Date() > new Date(user.otpExpires)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Code has expired. Please request a new one.'
+        message: 'Code has expired. Please request a new one.',
       });
     }
 
@@ -440,69 +371,55 @@ export const verifyOtp = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Email verified successfully!'
+      message: 'Account verified successfully!',
     });
 
   } catch (error) {
-    console.error('VERIFY OTP ERROR:', {
-      name: error.name,
-      message: error.message,
-      stack: error.stack
-    });
+    console.error(
+      'OTP verification error:',
+      error.stack
+    );
 
     return res.status(500).json({
       success: false,
-      message: 'OTP verification failed.',
-      ...(process.env.NODE_ENV !== 'production' && {
-        debug: error.message
-      })
+      message: error.message,
     });
   }
 };
 
 // ==========================================
-// 9. RESEND OTP
+// 3. RESEND OTP
 // ==========================================
 
 export const resendOtp = async (req, res) => {
+  const { email } = req.body;
+
   try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email address is required.'
-      });
-    }
-
-    const normalizedEmail = String(email).trim().toLowerCase();
-
     const user = await User.findOne({
-      email: normalizedEmail
+      email,
     }).select('+otp +otpExpires');
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found.'
+        message: 'User not found.',
       });
     }
 
     if (user.isVerified) {
       return res.status(400).json({
         success: false,
-        message: 'Email is already verified.'
+        message: 'Account is already verified.',
       });
     }
 
     const otp = generateOTP();
 
-    const otpExpires = new Date(
+    user.otp = otp;
+
+    user.otpExpires = new Date(
       Date.now() + 10 * 60 * 1000
     );
-
-    user.otp = otp;
-    user.otpExpires = otpExpires;
 
     await user.save();
 
@@ -510,131 +427,102 @@ export const resendOtp = async (req, res) => {
       .toString()
       .slice(-6);
 
-    try {
-      await sendOTPEmail(
-        normalizedEmail,
-        user.name,
-        otp,
-        uniqueId
-      );
+    const delivery = await sendOTPToCustomer(
+      user,
+      otp,
+      uniqueId
+    );
 
-      return res.status(200).json({
-        success: true,
-        emailSent: true,
-        message: 'New verification code sent successfully.'
-      });
-
-    } catch (emailError) {
-      console.error('RESEND OTP FAILED:', {
-        message: emailError.message
-      });
-
-      return res.status(500).json({
+    if (!delivery.atLeastOneSent) {
+      return res.status(503).json({
         success: false,
         emailSent: false,
-        message: 'OTP generated, but email delivery failed. Please try again later.',
-        ...(process.env.NODE_ENV !== 'production' && {
-          debug: emailError.message
-        })
+        whatsappSent: false,
+        message: 'OTP generated, but delivery failed. Please try again later.',
       });
     }
 
-  } catch (error) {
-    console.error('RESEND OTP ERROR:', {
-      name: error.name,
-      message: error.message,
-      stack: error.stack
+    return res.status(200).json({
+      success: true,
+      emailSent: delivery.emailSent,
+      whatsappSent: delivery.whatsappSent,
+      message: 'New verification code sent through the available channels.',
     });
+
+  } catch (error) {
+    console.error(
+      'Resend OTP error:',
+      error.stack
+    );
 
     return res.status(500).json({
       success: false,
-      message: 'Unable to resend verification code.',
-      ...(process.env.NODE_ENV !== 'production' && {
-        debug: error.message
-      })
+      message: error.message,
     });
   }
 };
 
 // ==========================================
-// 10. LOGIN USER
+// 4. LOGIN
 // ==========================================
 
 export const loginUser = async (req, res) => {
-
-  // Diagnostic: confirms that the request reaches this controller.
-  console.log('LOGIN CONTROLLER REACHED:', {
-    method: req.method,
-    path: req.originalUrl,
-    emailProvided: Boolean(req.body?.email),
-    passwordProvided: Boolean(req.body?.password)
-  });
+  const {
+    email,
+    password,
+  } = req.body;
 
   try {
-    const {
-      email,
-      password
-    } = req.body || {};
+    const user = await User.findOne({ email });
 
-    // Validate input types and values.
     if (
-      typeof email !== 'string' ||
-      typeof password !== 'string' ||
-      !email.trim() ||
-      !password
+      !user ||
+      !(await user.matchPassword(password))
     ) {
-      return res.status(400).json({
-        success: false,
-        message: 'A valid email address and password are required.'
-      });
-    }
-
-    const normalizedEmail = email.trim().toLowerCase();
-
-    console.log('LOGIN: Searching for user.');
-
-    const user = await User.findOne({
-      email: normalizedEmail
-    });
-
-    if (!user) {
-      console.log('LOGIN: User not found.');
-
       return res.status(401).json({
         success: false,
-        message: 'Invalid email or password.'
+        message: 'Invalid email or password.',
       });
     }
 
-    console.log('LOGIN: User found. Checking password.');
-
-    const passwordMatches = await user.matchPassword(password);
-
-    if (!passwordMatches) {
-      console.log('LOGIN: Password mismatch.');
-
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password.'
-      });
-    }
-
-    console.log('LOGIN: Password matched.');
+    // Send a fresh OTP when an unverified customer tries to log in.
 
     if (!user.isVerified) {
-      console.log('LOGIN: Email verification required.');
+      const otp = generateOTP();
+
+      user.otp = otp;
+
+      user.otpExpires = new Date(
+        Date.now() + 10 * 60 * 1000
+      );
+
+      await user.save();
+
+      const delivery = await sendOTPToCustomer(
+        user,
+        otp
+      );
+
+      if (!delivery.atLeastOneSent) {
+        return res.status(503).json({
+          success: false,
+          requiresVerification: true,
+          emailSent: false,
+          whatsappSent: false,
+          message: 'We could not deliver your verification code. Please try again later.',
+        });
+      }
 
       return res.status(403).json({
         success: false,
-        message: 'Please verify your email address before logging in.'
+        requiresVerification: true,
+
+        emailSent: delivery.emailSent,
+        whatsappSent: delivery.whatsappSent,
+
+        message: 'Your account is not verified. A new verification code has been sent through the available channels.',
       });
     }
-
-    console.log('LOGIN: Generating JWT.');
-
-    const token = generateToken(user);
-
-    console.log('LOGIN: Authentication successful.');
 
     return res.status(200).json({
       success: true,
@@ -647,30 +535,24 @@ export const loginUser = async (req, res) => {
 
       permissions: user.permissions || [],
 
-      token
+      token: generateToken(user),
     });
 
   } catch (error) {
-
-    console.error('LOGIN CONTROLLER ERROR:', {
-      name: error.name,
-      message: error.message,
-      stack: error.stack
-    });
+    console.error(
+      'Login error:',
+      error.stack
+    );
 
     return res.status(500).json({
       success: false,
-      message: 'Login failed due to a server error.',
-
-      ...(process.env.NODE_ENV !== 'production' && {
-        debug: error.message
-      })
+      message: error.message,
     });
   }
 };
 
 // ==========================================
-// 11. GET PROFILE
+// 5. GET PROFILE
 // ==========================================
 
 export const getProfile = async (req, res) => {
@@ -682,119 +564,107 @@ export const getProfile = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found.'
+        message: 'User not found.',
       });
     }
 
     return res.status(200).json({
-      success: true,
-
       _id: user._id,
       name: user.name,
       email: user.email,
       phone: user.phone,
       role: user.role,
       isVerified: user.isVerified,
-
-      permissions: user.permissions || []
+      permissions: user.permissions || [],
     });
 
   } catch (error) {
-    console.error('GET PROFILE ERROR:', {
-      name: error.name,
-      message: error.message,
-      stack: error.stack
-    });
+    console.error(
+      'Profile error:',
+      error.stack
+    );
 
     return res.status(500).json({
       success: false,
-      message: 'Failed to retrieve user profile.',
-      ...(process.env.NODE_ENV !== 'production' && {
-        debug: error.message
-      })
+      message: error.message,
     });
   }
 };
 
 // ==========================================
-// 12. REGISTER ENGINEER
+// 6. REGISTER ENGINEER
 // ==========================================
 
 export const registerEngineer = async (req, res) => {
+  const {
+    name,
+    email,
+    phone,
+    password,
+    inviteCode,
+  } = req.body;
+
   try {
-    const {
-      name,
-      email,
-      phone,
-      password,
-      inviteCode
-    } = req.body;
-
-    if (!name || !email || !phone || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide all required fields.'
-      });
-    }
-
     if (!inviteCode) {
       return res.status(400).json({
         success: false,
-        message: 'Engineer invite code is required.'
+        message: 'Engineer invite code is required.',
       });
     }
 
     const tokenRecord = await InviteToken.findOne({
       token: inviteCode,
-      isActive: true
+      isActive: true,
     });
 
     if (!tokenRecord) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid or already used invite code. Contact admin for access.'
+        message: 'Invalid or already used invite code. Contact admin for access.',
       });
     }
 
     if (
-      !tokenRecord.expiresAt ||
       new Date() > new Date(tokenRecord.expiresAt)
     ) {
       tokenRecord.isActive = false;
+
       await tokenRecord.save();
 
       return res.status(400).json({
         success: false,
-        message: 'This invite code has expired. Please request a new one from admin.'
+        message: 'This invite code has expired. Please request a new one from admin.',
       });
     }
 
-    const normalizedEmail = String(email).trim().toLowerCase();
+    const normalizedEmail = email.toLowerCase();
 
     const emailExists = await User.findOne({
-      email: normalizedEmail
+      email: normalizedEmail,
     });
 
     if (emailExists) {
       return res.status(400).json({
         success: false,
-        message: 'An account with this email already exists.'
+        message: 'An account with this email already exists.',
       });
     }
 
-    const phoneExists = await User.findOne({ phone });
+    const phoneExists = await User.findOne({
+      phone,
+    });
 
     if (phoneExists) {
       return res.status(400).json({
         success: false,
-        message: 'An account with this phone number already exists.'
+        message: 'An account with this phone number already exists.',
       });
     }
 
-    if (password.length < 6) {
+    if (!password || password.length < 6) {
       return res.status(400).json({
         success: false,
-        message: 'Password must be at least 6 characters.'
+        message: 'Password must be at least 6 characters.',
       });
     }
 
@@ -812,7 +682,7 @@ export const registerEngineer = async (req, res) => {
       role: 'engineer',
       isVerified: false,
       otp,
-      otpExpires
+      otpExpires,
     });
 
     tokenRecord.isActive = false;
@@ -820,38 +690,27 @@ export const registerEngineer = async (req, res) => {
 
     await tokenRecord.save();
 
-    let emailSent = false;
-
-    try {
-      await sendOTPEmail(
-        normalizedEmail,
-        name,
-        otp
-      );
-
-      emailSent = true;
-
-    } catch (emailError) {
-      console.error(
-        'ENGINEER REGISTRATION EMAIL FAILED:',
-        emailError.message
-      );
-    }
+    const delivery = await sendOTPToCustomer(
+      user,
+      otp
+    );
 
     logActivity(
-      'user',
-      `New engineer registration: ${user.name} (${user.email})`,
-      user
+      user,
+      `New engineer registration: ${user.name} (${user.email})`
     );
 
     return res.status(201).json({
       success: true,
 
-      message: emailSent
-        ? 'Engineer account created! Verification code sent to your email.'
-        : 'Engineer account created, but email delivery failed. Please request a new verification code.',
+      message: delivery.atLeastOneSent
+        ? 'Engineer account created. Verification code sent through the available channels.'
+        : 'Engineer account created, but OTP delivery failed. Please request a new code.',
 
-      emailSent,
+      requiresVerification: true,
+
+      emailSent: delivery.emailSent,
+      whatsappSent: delivery.whatsappSent,
 
       user: {
         _id: user._id,
@@ -860,32 +719,28 @@ export const registerEngineer = async (req, res) => {
         phone: user.phone,
         role: user.role,
         isVerified: user.isVerified,
-        permissions: user.permissions || []
+        permissions: user.permissions || [],
       },
 
-      token: generateToken(user)
+      token: generateToken(user),
     });
 
   } catch (error) {
-    console.error('ENGINEER REGISTRATION ERROR:', {
-      name: error.name,
-      message: error.message,
-      stack: error.stack
-    });
+    console.error(
+      'Engineer registration error:',
+      error.stack
+    );
 
     if (error.name === 'ValidationError') {
       return res.status(400).json({
         success: false,
-        message: error.message
+        message: error.message,
       });
     }
 
     return res.status(500).json({
       success: false,
       message: 'Registration failed. Please try again.',
-      ...(process.env.NODE_ENV !== 'production' && {
-        debug: error.message
-      })
     });
   }
 };

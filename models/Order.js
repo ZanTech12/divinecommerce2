@@ -91,8 +91,8 @@ const shippingAddressSchema = new Schema({
 const whatsappPaymentNotificationSchema = new Schema({
   status: {
     type: String,
-    enum: ["pending", "sent", "failed"],
-    default: "pending"
+    enum: ["pending", "sent", "failed", "not_required"],
+    default: "not_required"
   },
   sentAt: {
     type: Date,
@@ -118,7 +118,8 @@ const orderSchema = new Schema({
     type: String,
     required: true,
     unique: true,
-    uppercase: true
+    uppercase: true,
+    trim: true
   },
 
   // ==========================================
@@ -137,7 +138,6 @@ const orderSchema = new Schema({
     trim: true
   },
 
-  // WhatsApp number used to place the order.
   whatsappPhone: {
     type: String,
     default: null,
@@ -218,11 +218,11 @@ const orderSchema = new Schema({
     default: null
   },
 
-  // Monnify references.
+  // Monnify reference.
+  // Only actual string references must be unique.
   monnifyPaymentReference: {
     type: String,
-    default: null,
-    index: true
+    default: null
   },
 
   monnifyTransactionReference: {
@@ -316,6 +316,24 @@ const orderSchema = new Schema({
 }, {
   timestamps: true
 });
+
+// ==========================================
+// INDEXES
+// ==========================================
+
+// Prevent duplicate actual Monnify payment references.
+// Multiple null or missing references are allowed.
+
+orderSchema.index(
+  { monnifyPaymentReference: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      monnifyPaymentReference: { $type: "string" }
+    },
+    name: "monnifyPaymentReference_1"
+  }
+);
 
 // ==========================================
 // BACKWARD COMPATIBILITY

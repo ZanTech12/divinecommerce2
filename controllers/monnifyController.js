@@ -1,6 +1,10 @@
+
+// controllers/monnifyController.js
+
 import crypto from "crypto";
 import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
+import { sendWhatsAppNotification } from "../utils/sendWhatsAppNotification.js";
 
 // ==========================================
 // MONNIFY CONFIGURATION
@@ -47,8 +51,8 @@ async function getMonnifyToken() {
       method: "POST",
       headers: {
         Authorization: `Basic ${credentials}`,
-        "Content-Type": "application/json"
-      }
+        "Content-Type": "application/json",
+      },
     }
   );
 
@@ -62,7 +66,8 @@ async function getMonnifyToken() {
     console.error("Monnify authentication failed:", result);
 
     throw new Error(
-      result.responseMessage || "Unable to authenticate with Monnify."
+      result.responseMessage ||
+        "Unable to authenticate with Monnify."
     );
   }
 
@@ -83,8 +88,8 @@ async function monnifyRequest(url, options = {}) {
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
-        ...options.headers
-      }
+        ...options.headers,
+      },
     }
   );
 
@@ -114,7 +119,7 @@ async function creditOrderCoins(order) {
     return 0;
   }
 
-  // Existing rule: 1 coin per ₦10,000 actual cash paid.
+  // 1 coin per ₦10,000 actual cash paid.
   const coinsToCredit = Math.floor(
     Number(order.amountPaid || 0) / 10000
   );
@@ -123,20 +128,19 @@ async function creditOrderCoins(order) {
     return 0;
   }
 
-  // Claim the credit operation atomically.
-  // Repeated webhook notifications cannot claim it again.
+  // Atomically claim the credit operation.
   const claimedOrder = await Order.findOneAndUpdate(
     {
       _id: order._id,
-      coinsCredited: false
+      coinsCredited: false,
     },
     {
       $set: {
-        coinsCredited: true
-      }
+        coinsCredited: true,
+      },
     },
     {
-      new: true
+      new: true,
     }
   );
 
@@ -149,25 +153,172 @@ async function creditOrderCoins(order) {
       { user: order.user },
       {
         $inc: {
-          coins: coinsToCredit
-        }
+          coins: coinsToCredit,
+        },
       },
       {
         upsert: true,
-        new: true
+        new: true,
       }
     );
 
     return coinsToCredit;
   } catch (error) {
-    // Release the claim if wallet crediting fails.
     await Order.findByIdAndUpdate(order._id, {
       $set: {
-        coinsCredited: false
-      }
+        coinsCredited: false,
+      },
     });
 
     throw error;
+  }
+}
+
+// ==========================================
+// WHATSAPP PAYMENT SUCCESS NOTIFICATION
+// ==========================================
+
+async function sendPaymentSuccessWhatsApp(order) {
+  if (!order) {
+    return {
+      success: false,
+      error: "Order not found.",
+    };
+  }
+
+  const notificationPath = "whatsappPaymentNotification";
+
+  // Do not send the same notification again if already sent.
+  if (
+    order.whatsappPaymentNotification?.status === "sent"
+  ) {
+    return {
+      success: true,
+      alreadySent: true,
+    };
+  }
+
+  try {
+    // Record the notification attempt.
+    await Order.updateOne(
+      { _id: order._id },
+      {
+        $inc: {
+          [`${notificationPath}.attempts`]: 1,
+        },
+        $set: {
+          [`${notificationPath}.status`]: "pending",
+          [`${notificationPath}.lastError`]: null,
+        },
+      }
+    );
+
+    const message = [
+      "☀️ *DIVINE SOLAR HUB*",
+      "",
+      "✅ *PAYMENT SUCCESSFUL!*",
+      "",
+      "We have successfully received your payment.",
+      "",
+      `Order Number: *${order.orderNumber}*`,
+      `Amount Paid: *₦${Number(
+        order.amountPaid || 0
+      ).toLocaleString("en-NG")}*`,
+      "Payment Method: *Monnify*",
+      `Payment Status: *${order.paymentStatus}*`,
+      `Order Status: *${order.status}*`,
+      "",
+      "Your payment has been confirmed.",
+      "Please find your PDF payment receipt attached.",
+      "",
+      "Thank you for shopping with Divine Solar Hub!",
+    ].join("\n");
+
+    const result = await sendWhatsAppNotification({
+      order,
+      message,
+      attachReceipt: true,
+    });
+
+    if (!result?.success) {
+      const errorMessage =
+        result?.reason ||
+        result?.error ||
+        "WhatsApp notification was not sent.";
+
+      await Order.updateOne(
+        { _id: order._id },
+        {
+          $set: {
+            [`${notificationPath}.status`]: "failed",
+            [`${notificationPath}.lastError`]:
+              errorMessage,
+          },
+        }
+      );
+
+      console.error(
+        `WhatsApp notification failed for ${order.orderNumber}:`,
+        errorMessage
+      );
+
+      return {
+        success: false,
+        error: errorMessage,
+      };
+    }
+
+    // Record successful WhatsApp delivery.
+    await Order.updateOne(
+      { _id: order._id },
+      {
+        $set: {
+          [`${notificationPath}.status`]: "sent",
+          [`${notificationPath}.sentAt`]: new Date(),
+          [`${notificationPath}.lastError`]: null,
+        },
+      }
+    );
+
+    console.log(
+      `Payment WhatsApp notification sent for ${order.orderNumber}.`,
+      `Receipt sent: ${result.receiptSent === true}`
+    );
+
+    return {
+      success: true,
+      receiptSent: result.receiptSent === true,
+    };
+
+  } catch (error) {
+    console.error(
+      `Payment WhatsApp notification failed for ${order.orderNumber}:`,
+      error.message
+    );
+
+    // WhatsApp failure must never reverse successful payment.
+    try {
+      await Order.updateOne(
+        { _id: order._id },
+        {
+          $set: {
+            [`${notificationPath}.status`]: "failed",
+            [`${notificationPath}.lastError`]:
+              error.message,
+          },
+        }
+      );
+    } catch (databaseError) {
+      console.error(
+        "Unable to save WhatsApp notification failure:",
+        databaseError.message
+      );
+    }
+
+    return {
+      success: false,
+      error: error.message,
+    };
   }
 }
 
@@ -176,12 +327,13 @@ async function creditOrderCoins(order) {
 // ==========================================
 
 async function queryMonnifyTransaction(paymentReference) {
-  const encodedReference = encodeURIComponent(paymentReference);
+  const encodedReference =
+    encodeURIComponent(paymentReference);
 
   return monnifyRequest(
     `/api/v2/merchant/transactions/query?paymentReference=${encodedReference}`,
     {
-      method: "GET"
+      method: "GET",
     }
   );
 }
@@ -198,11 +350,13 @@ async function markOrderPaid(transaction) {
   }
 
   const order = await Order.findOne({
-    monnifyPaymentReference: paymentReference
+    monnifyPaymentReference: paymentReference,
   });
 
   if (!order) {
-    throw new Error("No order matches this Monnify payment reference.");
+    throw new Error(
+      "No order matches this Monnify payment reference."
+    );
   }
 
   const paymentStatus = String(
@@ -222,7 +376,9 @@ async function markOrderPaid(transaction) {
   );
 
   if (paymentStatus !== "PAID") {
-    throw new Error("Monnify has not confirmed this payment as paid.");
+    throw new Error(
+      "Monnify has not confirmed this payment as paid."
+    );
   }
 
   if (currency !== "NGN") {
@@ -234,60 +390,91 @@ async function markOrderPaid(transaction) {
     !Number.isFinite(expectedAmount) ||
     Math.abs(amountPaid - expectedAmount) > 0.01
   ) {
-    throw new Error("Payment amount does not match the order amount.");
+    throw new Error(
+      "Payment amount does not match the order amount."
+    );
   }
 
   // Do not overwrite a cancelled order's fulfilment status.
-  // Payment can still be recorded so the merchant can handle a refund.
   const update = {
     paymentStatus: "paid",
     paymentGateway: "monnify",
     paymentReference,
+
     monnifyTransactionReference:
       transaction.transactionReference || null,
+
     paidAt: transaction.paidOn
       ? new Date(transaction.paidOn)
       : new Date(),
-    amountPaid
+
+    amountPaid,
   };
 
   if (order.status === "pending") {
     update.status = "confirmed";
   }
 
+  // Atomic payment update.
+  // Only one request can transition this order to paid.
   const updatedOrder = await Order.findOneAndUpdate(
     {
       _id: order._id,
-      paymentStatus: { $ne: "paid" }
+      paymentStatus: { $ne: "paid" },
     },
     {
-      $set: update
+      $set: update,
     },
     {
-      new: true
+      new: true,
     }
   );
 
-  // Already processed: webhook or verification retry.
+  // Payment was already processed.
   if (!updatedOrder) {
+    const existingOrder = await Order.findById(order._id);
+
+    // Retry WhatsApp if the earlier notification failed
+    // or was never completed.
+    if (
+      existingOrder?.paymentStatus === "paid" &&
+      existingOrder.whatsappPaymentNotification?.status !== "sent"
+    ) {
+      await sendPaymentSuccessWhatsApp(existingOrder);
+    }
+
     return {
       order: await Order.findById(order._id),
       coinsCredited: 0,
-      alreadyProcessed: true
+      alreadyProcessed: true,
     };
   }
 
   let coinsCredited = 0;
 
-  // Preserve the existing rule that cancelled orders do not earn coins.
+  // Credit coins without allowing wallet errors to
+  // misrepresent the successful payment.
   if (updatedOrder.status !== "cancelled") {
-    coinsCredited = await creditOrderCoins(updatedOrder);
+    try {
+      coinsCredited = await creditOrderCoins(updatedOrder);
+    } catch (error) {
+      console.error(
+        "Loyalty coin credit failed after successful payment:",
+        error.message
+      );
+    }
   }
+
+  // Send WhatsApp notification and PDF receipt only
+  // after successful payment confirmation.
+  const finalOrder = await Order.findById(order._id);
+
+  await sendPaymentSuccessWhatsApp(finalOrder);
 
   return {
     order: await Order.findById(order._id),
     coinsCredited,
-    alreadyProcessed: false
+    alreadyProcessed: false,
   };
 }
 
@@ -303,40 +490,41 @@ export async function initializeMonnifyPayment(req, res) {
     if (!orderId) {
       return res.status(400).json({
         success: false,
-        message: "Order ID is required."
+        message: "Order ID is required.",
       });
     }
 
     const order = await Order.findOne({
       _id: orderId,
-      user: req.user._id
+      user: req.user._id,
     });
 
     if (!order) {
       return res.status(404).json({
         success: false,
-        message: "Order not found."
+        message: "Order not found.",
       });
     }
 
     if (order.paymentMethod !== "monnify") {
       return res.status(400).json({
         success: false,
-        message: "This order was not created for Monnify payment."
+        message:
+          "This order was not created for Monnify payment.",
       });
     }
 
     if (order.paymentStatus === "paid") {
       return res.status(400).json({
         success: false,
-        message: "This order has already been paid."
+        message: "This order has already been paid.",
       });
     }
 
     if (order.status === "cancelled") {
       return res.status(400).json({
         success: false,
-        message: "This order has been cancelled."
+        message: "This order has been cancelled.",
       });
     }
 
@@ -349,7 +537,7 @@ export async function initializeMonnifyPayment(req, res) {
     if (!Number.isFinite(amount) || amount <= 0) {
       return res.status(400).json({
         success: false,
-        message: "Invalid order payment amount."
+        message: "Invalid order payment amount.",
       });
     }
 
@@ -360,13 +548,14 @@ export async function initializeMonnifyPayment(req, res) {
     if (!customerEmail) {
       return res.status(400).json({
         success: false,
-        message: "Customer email is required for Monnify payment."
+        message:
+          "Customer email is required for Monnify payment.",
       });
     }
 
-    // Reuse the pending reference if the customer retries
-    // initialization for the same order.
-    let paymentReference = order.monnifyPaymentReference;
+    // Reuse the pending reference if the customer retries.
+    let paymentReference =
+      order.monnifyPaymentReference;
 
     if (!paymentReference) {
       paymentReference =
@@ -380,12 +569,14 @@ export async function initializeMonnifyPayment(req, res) {
       await order.save();
     }
 
-    const redirectUrl = process.env.MONNIFY_REDIRECT_URL;
+    const redirectUrl =
+      process.env.MONNIFY_REDIRECT_URL;
 
     if (!redirectUrl) {
       return res.status(500).json({
         success: false,
-        message: "MONNIFY_REDIRECT_URL is not configured."
+        message:
+          "MONNIFY_REDIRECT_URL is not configured.",
       });
     }
 
@@ -397,28 +588,35 @@ export async function initializeMonnifyPayment(req, res) {
       "/api/v1/merchant/transactions/init-transaction",
       {
         method: "POST",
+
         body: JSON.stringify({
           amount,
           customerName,
           customerEmail,
+
           customerPhoneNumber:
             order.shippingAddress?.phone || "",
+
           paymentReference,
+
           paymentDescription:
             `Divine Solar Hub Order ${order.orderNumber}`,
+
           currencyCode: "NGN",
           contractCode: MONNIFY_CONTRACT_CODE,
           redirectUrl,
+
           paymentMethods: [
             "CARD",
-            "ACCOUNT_TRANSFER"
+            "ACCOUNT_TRANSFER",
           ],
+
           metadata: {
             orderId: order._id.toString(),
             orderNumber: order.orderNumber,
-            customerEmail
-          }
-        })
+            customerEmail,
+          },
+        }),
       }
     );
 
@@ -429,20 +627,28 @@ export async function initializeMonnifyPayment(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: "Monnify payment initialized successfully.",
+      message:
+        "Monnify payment initialized successfully.",
+
       checkoutUrl: responseBody.checkoutUrl,
       paymentReference: responseBody.paymentReference,
-      transactionReference: responseBody.transactionReference,
-      orderId: order._id,
-      amount
-    });
+      transactionReference:
+        responseBody.transactionReference,
 
+      orderId: order._id,
+      amount,
+    });
   } catch (error) {
-    console.error("Monnify initialization error:", error);
+    console.error(
+      "Monnify initialization error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: error.message || "Unable to initialize Monnify payment."
+      message:
+        error.message ||
+        "Unable to initialize Monnify payment.",
     });
   }
 }
@@ -459,28 +665,41 @@ export async function verifyMonnifyPayment(req, res) {
     if (!paymentReference) {
       return res.status(400).json({
         success: false,
-        message: "Payment reference is required."
+        message: "Payment reference is required.",
       });
     }
 
     const order = await Order.findOne({
       monnifyPaymentReference: paymentReference,
-      user: req.user._id
+      user: req.user._id,
     });
 
     if (!order) {
       return res.status(404).json({
         success: false,
-        message: "Order not found for this payment reference."
+        message:
+          "Order not found for this payment reference.",
       });
     }
 
+    // Payment is already confirmed.
+    // Retry WhatsApp if the previous notification failed.
     if (order.paymentStatus === "paid") {
+      let currentOrder = order;
+
+      if (
+        order.whatsappPaymentNotification?.status !== "sent"
+      ) {
+        await sendPaymentSuccessWhatsApp(order);
+
+        currentOrder = await Order.findById(order._id);
+      }
+
       return res.status(200).json({
         success: true,
         message: "Payment has already been verified.",
         paymentStatus: "paid",
-        order
+        order: currentOrder,
       });
     }
 
@@ -494,15 +713,18 @@ export async function verifyMonnifyPayment(req, res) {
       message: "Payment verification completed.",
       paymentStatus: "paid",
       order: result.order,
-      coinsCredited: result.coinsCredited
+      coinsCredited: result.coinsCredited,
     });
-
   } catch (error) {
-    console.error("Monnify verification error:", error);
+    console.error(
+      "Monnify verification error:",
+      error
+    );
 
     return res.status(400).json({
       success: false,
-      message: error.message || "Payment verification failed."
+      message:
+        error.message || "Payment verification failed.",
     });
   }
 }
@@ -512,8 +734,6 @@ export async function verifyMonnifyPayment(req, res) {
 // ==========================================
 
 function isValidMonnifyWebhook(req) {
-  // Monnify sandbox webhook notifications may not include
-  // the monnify-signature header.
   if (!isProductionMonnify) {
     return true;
   }
@@ -540,11 +760,17 @@ function isValidMonnifyWebhook(req) {
     "hex"
   );
 
-  if (received.length !== expected.length) {
+  if (
+    received.length !== expected.length ||
+    received.length === 0
+  ) {
     return false;
   }
 
-  return crypto.timingSafeEqual(received, expected);
+  return crypto.timingSafeEqual(
+    received,
+    expected
+  );
 }
 
 // ==========================================
@@ -555,11 +781,13 @@ function isValidMonnifyWebhook(req) {
 export async function monnifyWebhook(req, res) {
   try {
     if (!isValidMonnifyWebhook(req)) {
-      console.error("Invalid Monnify webhook signature.");
+      console.error(
+        "Invalid Monnify webhook signature."
+      );
 
       return res.status(401).json({
         success: false,
-        message: "Invalid webhook signature."
+        message: "Invalid webhook signature.",
       });
     }
 
@@ -572,12 +800,12 @@ export async function monnifyWebhook(req, res) {
     ) {
       return res.status(200).json({
         success: true,
-        message: "Webhook received. No payment action required."
+        message:
+          "Webhook received. No payment action required.",
       });
     }
 
-    // Never rely only on the webhook body.
-    // Query Monnify's API to independently verify the transaction.
+    // Verify directly with Monnify.
     const transaction =
       await queryMonnifyTransaction(
         eventData.paymentReference
@@ -592,15 +820,17 @@ export async function monnifyWebhook(req, res) {
     return res.status(200).json({
       success: true,
       message: "Webhook processed successfully.",
-      alreadyProcessed: result.alreadyProcessed
+      alreadyProcessed: result.alreadyProcessed,
     });
-
   } catch (error) {
-    console.error("Monnify webhook error:", error);
+    console.error(
+      "Monnify webhook error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Webhook processing failed."
+      message: "Webhook processing failed.",
     });
   }
 }

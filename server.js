@@ -1,4 +1,6 @@
 
+// server.js
+
 import "dotenv/config";
 
 import express from "express";
@@ -10,7 +12,10 @@ import { v2 as cloudinary } from "cloudinary";
 import connectDB from "./config/db.js";
 import User from "./models/User.js";
 
-// Existing routes
+// ==========================================
+// EXISTING ROUTES
+// ==========================================
+
 import authRoutes from "./routes/authRoutes.js";
 import siteSettingsRoutes from "./routes/siteSettings.js";
 import categoryRoutes from "./routes/categories.js";
@@ -24,7 +29,10 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 import activityRoutes from "./routes/activityRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 
-// Baileys WhatsApp bot routes
+// ==========================================
+// WHATSAPP BOT ROUTES
+// ==========================================
+
 import whatsappBotRoutes from "./routes/whatsappBotRoutes.js";
 
 import {
@@ -45,7 +53,7 @@ app.disable("x-powered-by");
 // ==========================================
 
 app.get("/", (req, res) => {
-  res.status(200).json({
+  return res.status(200).json({
     success: true,
     message: "DIVINE SOLAR HUB API is running.",
     health: "/api/health"
@@ -96,12 +104,16 @@ const allAllowedOrigins = [
 
 const corsOptions = {
   origin: (origin, callback) => {
+    // Allow requests without an Origin header,
+    // such as server-to-server requests and health checks.
     if (!origin) {
       return callback(null, true);
     }
 
-    const isAllowed = allAllowedOrigins.includes(origin);
+    const isAllowed =
+      allAllowedOrigins.includes(origin);
 
+    // Only allow Vercel preview URLs when explicitly enabled.
     const isVercel =
       process.env.ALLOW_VERCEL_ORIGINS === "true" &&
       /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin);
@@ -112,7 +124,9 @@ const corsOptions = {
 
     console.warn("CORS blocked:", origin);
 
-    return callback(new Error("Not allowed by CORS"));
+    return callback(
+      new Error("Not allowed by CORS")
+    );
   },
 
   credentials: true,
@@ -142,16 +156,20 @@ app.use(cors(corsOptions));
 // ==========================================
 
 // Preserve the original request body for
-// payment webhook signature verification.
+// Monnify webhook signature verification.
+//
+// IMPORTANT:
+// This middleware must run before paymentRoutes.
 
 app.use(express.json({
   limit: "10mb",
 
   verify: (req, res, buffer) => {
+    const requestPath =
+      req.originalUrl?.split("?")[0];
+
     const isMonnifyWebhook =
-      req.originalUrl?.startsWith(
-        "/api/payments/monnify/webhook"
-      );
+      requestPath === "/api/payments/monnify/webhook";
 
     if (isMonnifyWebhook) {
       req.rawBody = Buffer.from(buffer);
@@ -169,7 +187,7 @@ app.use(express.urlencoded({
 // ==========================================
 
 app.get("/api/health", (req, res) => {
-  res.status(200).json({
+  return res.status(200).json({
     success: true,
     message: "DIVINE SOLAR HUB API is running.",
     environment: process.env.NODE_ENV || "development",
@@ -238,8 +256,7 @@ app.use("/api/dashboard", dashboardRoutes);
 // BAILEYS WHATSAPP BOT API
 // ==========================================
 
-// Protected by BOT_API_SECRET in
-// whatsappBotRoutes.js.
+// Protected by BOT_API_SECRET in whatsappBotRoutes.js.
 //
 // GET  /api/whatsapp/products
 // GET  /api/whatsapp/products/:id
@@ -270,14 +287,14 @@ const upload = multer({
     ];
 
     if (allowedMimeTypes.includes(file.mimetype)) {
-      callback(null, true);
-    } else {
-      callback(
-        new Error(
-          "Only JPEG, PNG, WEBP and GIF images are allowed."
-        )
-      );
+      return callback(null, true);
     }
+
+    return callback(
+      new Error(
+        "Only JPEG, PNG, WEBP and GIF images are allowed."
+      )
+    );
   }
 });
 
@@ -365,6 +382,7 @@ async function seedDemoUsers() {
     console.log(
       "Demo user seeding disabled in production."
     );
+
     return;
   }
 
@@ -411,6 +429,7 @@ async function seedDemoUsers() {
 
       if (!exists) {
         await User.create(acc);
+
         console.log(`Seeded: ${acc.email}`);
       } else {
         console.log(`Skipped: ${acc.email}`);
@@ -430,7 +449,7 @@ async function seedDemoUsers() {
 // ==========================================
 
 app.use((req, res) => {
-  res.status(404).json({
+  return res.status(404).json({
     success: false,
     message: "API route not found.",
     path: req.originalUrl
@@ -443,6 +462,10 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
   console.error("Server Error:", err.message);
+
+  if (res.headersSent) {
+    return next(err);
+  }
 
   if (err instanceof multer.MulterError) {
     return res.status(400).json({

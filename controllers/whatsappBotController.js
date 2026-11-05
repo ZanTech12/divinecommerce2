@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 import crypto from "crypto";
 
@@ -261,12 +262,21 @@ export const createWhatsAppOrder = async (req, res) => {
       });
     }
 
+    if (
+      customerPhone.length < 10 ||
+      customerPhone.length > 15
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid WhatsApp phone number"
+      });
+    }
+
     // Combine duplicate product IDs.
     const quantities = new Map();
 
     for (const item of items) {
       const productId = String(item.productId || "");
-
       const quantity = Number(item.quantity);
 
       if (
@@ -281,10 +291,17 @@ export const createWhatsAppOrder = async (req, res) => {
         });
       }
 
-      quantities.set(
-        productId,
-        (quantities.get(productId) || 0) + quantity
-      );
+      const newQuantity =
+        (quantities.get(productId) || 0) + quantity;
+
+      if (newQuantity > 100) {
+        return res.status(400).json({
+          success: false,
+          message: "Maximum quantity per product is 100"
+        });
+      }
+
+      quantities.set(productId, newQuantity);
     }
 
     const productIds = [...quantities.keys()];
@@ -304,7 +321,6 @@ export const createWhatsAppOrder = async (req, res) => {
     }
 
     const orderItems = [];
-
     let subtotal = 0;
 
     for (const product of products) {
@@ -362,6 +378,9 @@ export const createWhatsAppOrder = async (req, res) => {
 
       guestEmail: shippingAddress.email || undefined,
 
+      // Save the WhatsApp number separately for notifications.
+      whatsappPhone: customerPhone,
+
       items: orderItems,
 
       shippingAddress: {
@@ -402,6 +421,7 @@ export const createWhatsAppOrder = async (req, res) => {
       order: {
         _id: order._id,
         orderNumber: order.orderNumber,
+        whatsappPhone: order.whatsappPhone,
         subtotal: order.subtotal,
         shippingCost: order.shippingCost,
         tax: order.tax,
@@ -447,7 +467,7 @@ export const trackWhatsAppOrder = async (req, res) => {
     const order = await Order.findOne({
       orderNumber
     }).select(
-      "orderNumber shippingAddress items subtotal shippingCost totalAmount paymentStatus status trackingNumber estimatedDelivery createdAt"
+      "orderNumber whatsappPhone shippingAddress items subtotal shippingCost totalAmount paymentStatus status trackingNumber estimatedDelivery createdAt"
     );
 
     if (!order) {
@@ -457,8 +477,9 @@ export const trackWhatsAppOrder = async (req, res) => {
       });
     }
 
+    // Support older orders that may not have whatsappPhone saved.
     const savedPhone = normalizePhone(
-      order.shippingAddress.phone
+      order.whatsappPhone || order.shippingAddress?.phone
     );
 
     if (savedPhone !== whatsappPhone) {

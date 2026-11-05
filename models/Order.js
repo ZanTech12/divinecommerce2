@@ -85,6 +85,30 @@ const shippingAddressSchema = new Schema({
 }, { _id: false });
 
 // ==========================================
+// WHATSAPP PAYMENT NOTIFICATION SCHEMA
+// ==========================================
+
+const whatsappPaymentNotificationSchema = new Schema({
+  status: {
+    type: String,
+    enum: ["pending", "sent", "failed"],
+    default: "pending"
+  },
+  sentAt: {
+    type: Date,
+    default: null
+  },
+  attempts: {
+    type: Number,
+    default: 0
+  },
+  lastError: {
+    type: String,
+    default: null
+  }
+}, { _id: false });
+
+// ==========================================
 // MAIN ORDER SCHEMA
 // ==========================================
 
@@ -114,7 +138,6 @@ const orderSchema = new Schema({
   },
 
   // WhatsApp number used to place the order.
-  // Separate from the delivery phone number.
   whatsappPhone: {
     type: String,
     default: null,
@@ -181,7 +204,8 @@ const orderSchema = new Schema({
 
   paymentReference: {
     type: String,
-    default: null
+    default: null,
+    index: true
   },
 
   paystackReference: {
@@ -194,12 +218,11 @@ const orderSchema = new Schema({
     default: null
   },
 
-  // Monnify references
-  // Do not use unique+sparse with default null.
-
+  // Monnify references.
   monnifyPaymentReference: {
     type: String,
-    default: null
+    default: null,
+    index: true
   },
 
   monnifyTransactionReference: {
@@ -267,6 +290,15 @@ const orderSchema = new Schema({
   amountPaid: {
     type: Number,
     default: 0
+  },
+
+  // ==========================================
+  // WHATSAPP PAYMENT NOTIFICATION
+  // ==========================================
+
+  whatsappPaymentNotification: {
+    type: whatsappPaymentNotificationSchema,
+    default: () => ({})
   },
 
   // ==========================================

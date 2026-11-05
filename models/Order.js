@@ -3,6 +3,10 @@ import mongoose from "mongoose";
 
 const { Schema } = mongoose;
 
+// ==========================================
+// ORDER ITEM SCHEMA
+// ==========================================
+
 const orderItemSchema = new Schema({
   product: {
     type: Schema.Types.ObjectId,
@@ -36,6 +40,10 @@ const orderItemSchema = new Schema({
     color: { type: String }
   }
 }, { _id: false });
+
+// ==========================================
+// SHIPPING ADDRESS SCHEMA
+// ==========================================
 
 const shippingAddressSchema = new Schema({
   fullName: {
@@ -76,13 +84,22 @@ const shippingAddressSchema = new Schema({
   }
 }, { _id: false });
 
+// ==========================================
+// MAIN ORDER SCHEMA
+// ==========================================
+
 const orderSchema = new Schema({
+
   orderNumber: {
     type: String,
     required: true,
     unique: true,
     uppercase: true
   },
+
+  // ==========================================
+  // CUSTOMER INFORMATION
+  // ==========================================
 
   user: {
     type: Schema.Types.ObjectId,
@@ -94,6 +111,14 @@ const orderSchema = new Schema({
     type: String,
     lowercase: true,
     trim: true
+  },
+
+  // WhatsApp number used to place the order.
+  // Separate from the delivery phone number.
+  whatsappPhone: {
+    type: String,
+    default: null,
+    index: true
   },
 
   items: [orderItemSchema],
@@ -171,6 +196,7 @@ const orderSchema = new Schema({
 
   // Monnify references
   // Do not use unique+sparse with default null.
+
   monnifyPaymentReference: {
     type: String,
     default: null
@@ -291,5 +317,9 @@ orderSchema.pre("validate", function () {
   }
 
 });
+
+// ==========================================
+// EXPORT MODEL
+// ==========================================
 
 export default mongoose.model("Order", orderSchema);

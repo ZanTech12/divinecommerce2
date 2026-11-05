@@ -1,63 +1,59 @@
-// ==========================================
-// 1. ENVIRONMENT CONFIGURATION
-// ==========================================
 
-import 'dotenv/config';
+import "dotenv/config";
 
-// ==========================================
-// 2. IMPORTS
-// ==========================================
+import express from "express";
+import cors from "cors";
+import multer from "multer";
+import streamifier from "streamifier";
+import { v2 as cloudinary } from "cloudinary";
 
-import express from 'express';
-import cors from 'cors';
-import connectDB from './config/db.js';
+import connectDB from "./config/db.js";
+import User from "./models/User.js";
 
-import authRoutes from './routes/authRoutes.js';
-import siteSettingsRoutes from './routes/siteSettings.js';
-import categoryRoutes from './routes/categories.js';
-import productRoutes from './routes/products.js';
-import User from './models/User.js';
-import cartRoutes from './routes/cartRoutes.js';
-import orderRoutes from './routes/orderRoutes.js';
-import userRoutes from './routes/userRoutes.js';
-import messageRoutes from './routes/messageRoutes.js';
-import inviteRoutes from './routes/inviteRoutes.js';
-import paymentRoutes from './routes/paymentRoutes.js';
-import activityRoutes from './routes/activityRoutes.js';
-import dashboardRoutes from './routes/dashboardRoutes.js';
-import whatsappRoutes from './routes/whatsappRoutes.js';
+// Existing routes
+import authRoutes from "./routes/authRoutes.js";
+import siteSettingsRoutes from "./routes/siteSettings.js";
+import categoryRoutes from "./routes/categories.js";
+import productRoutes from "./routes/products.js";
+import cartRoutes from "./routes/cartRoutes.js";
+import orderRoutes from "./routes/orderRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
+import messageRoutes from "./routes/messageRoutes.js";
+import inviteRoutes from "./routes/inviteRoutes.js";
+import paymentRoutes from "./routes/paymentRoutes.js";
+import activityRoutes from "./routes/activityRoutes.js";
+import dashboardRoutes from "./routes/dashboardRoutes.js";
+
+// Baileys WhatsApp bot routes
+import whatsappBotRoutes from "./routes/whatsappBotRoutes.js";
 
 import {
   protect,
   requirePermission
-} from './middleware/authMiddleware.js';
-
-import multer from 'multer';
-import { v2 as cloudinary } from 'cloudinary';
-import streamifier from 'streamifier';
+} from "./middleware/authMiddleware.js";
 
 // ==========================================
-// 3. EXPRESS INITIALIZATION
+// EXPRESS INITIALIZATION
 // ==========================================
 
 const app = express();
 
-app.disable('x-powered-by');
+app.disable("x-powered-by");
 
 // ==========================================
-// 4. ROOT API ENDPOINT
+// ROOT ENDPOINT
 // ==========================================
 
-app.get('/', (req, res) => {
+app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
-    message: 'DIVINE SOLAR HUB API is running.',
-    health: '/api/health'
+    message: "DIVINE SOLAR HUB API is running.",
+    health: "/api/health"
   });
 });
 
 // ==========================================
-// 5. CLOUDINARY CONFIGURATION
+// CLOUDINARY CONFIGURATION
 // ==========================================
 
 cloudinary.config({
@@ -68,72 +64,72 @@ cloudinary.config({
 });
 
 // ==========================================
-// 6. CORS CONFIGURATION
+// CORS CONFIGURATION
 // ==========================================
 
 const allowedOrigins = [
-  'https://shop.divinesolarhub.com',
-  'https://divinesolarhub.com',
-  'https://www.divinesolarhub.com',
+  "https://shop.divinesolarhub.com",
+  "https://divinesolarhub.com",
+  "https://www.divinesolarhub.com",
 
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'http://localhost:3001',
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://localhost:3001",
 
-  'http://172.29.136.57:3000',
-  'http://192.168.1.15:5173'
+  "http://172.29.136.57:3000",
+  "http://192.168.1.15:5173"
 ];
 
 const envOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN
-      .split(',')
+      .split(",")
       .map(origin => origin.trim())
       .filter(Boolean)
   : [];
 
 const allAllowedOrigins = [
-  ...new Set([...allowedOrigins, ...envOrigins])
+  ...new Set([
+    ...allowedOrigins,
+    ...envOrigins
+  ])
 ];
 
 const corsOptions = {
   origin: (origin, callback) => {
-
-    // Allow requests without an Origin header.
-    // This includes server-to-server and command-line requests.
     if (!origin) {
       return callback(null, true);
     }
 
     const isAllowed = allAllowedOrigins.includes(origin);
 
-    // Optional Vercel preview deployment support.
     const isVercel =
-      process.env.ALLOW_VERCEL_ORIGINS === 'true' &&
+      process.env.ALLOW_VERCEL_ORIGINS === "true" &&
       /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin);
 
     if (isAllowed || isVercel) {
       return callback(null, true);
     }
 
-    console.warn('CORS blocked:', origin);
+    console.warn("CORS blocked:", origin);
 
-    return callback(new Error('Not allowed by CORS'));
+    return callback(new Error("Not allowed by CORS"));
   },
 
   credentials: true,
 
   methods: [
-    'GET',
-    'POST',
-    'PUT',
-    'PATCH',
-    'DELETE',
-    'OPTIONS'
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS"
   ],
 
   allowedHeaders: [
-    'Content-Type',
-    'Authorization'
+    "Content-Type",
+    "Authorization",
+    "x-bot-secret"
   ],
 
   optionsSuccessStatus: 204
@@ -142,24 +138,22 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // ==========================================
-// 7. BODY PARSERS
+// BODY PARSERS
 // ==========================================
 
-// Preserve the original request body for webhook signature
-// verification. Monnify uses this raw body to validate its
-// webhook signature in production.
+// Preserve the original request body for
+// payment webhook signature verification.
 
 app.use(express.json({
-  limit: '10mb',
+  limit: "10mb",
 
   verify: (req, res, buffer) => {
-    const isWhatsAppWebhook =
-      req.originalUrl?.startsWith('/api/whatsapp/webhook');
-
     const isMonnifyWebhook =
-      req.originalUrl?.startsWith('/api/payments/monnify/webhook');
+      req.originalUrl?.startsWith(
+        "/api/payments/monnify/webhook"
+      );
 
-    if (isWhatsAppWebhook || isMonnifyWebhook) {
+    if (isMonnifyWebhook) {
       req.rawBody = Buffer.from(buffer);
     }
   }
@@ -167,93 +161,96 @@ app.use(express.json({
 
 app.use(express.urlencoded({
   extended: true,
-  limit: '10mb'
+  limit: "10mb"
 }));
 
 // ==========================================
-// 8. API HEALTH CHECK
+// HEALTH CHECK
 // ==========================================
 
-app.get('/api/health', (req, res) => {
+app.get("/api/health", (req, res) => {
   res.status(200).json({
     success: true,
-    message: 'DIVINE SOLAR HUB API is running.',
-    environment: process.env.NODE_ENV || 'development',
+    message: "DIVINE SOLAR HUB API is running.",
+    environment: process.env.NODE_ENV || "development",
     timestamp: new Date().toISOString()
   });
 });
 
 // ==========================================
-// 9. WHATSAPP WEBHOOK ROUTE
+// DATABASE CONNECTION
 // ==========================================
 
-// Keep this before the general /api database middleware,
-// as in the existing WhatsApp integration.
-
-app.use('/api/whatsapp/webhook', whatsappRoutes);
-
-// ==========================================
-// 10. DATABASE CONNECTION MIDDLEWARE
-// ==========================================
-
-// connectDB uses a cached MongoDB connection.
-// This middleware ensures database access before API routes.
-
-app.use('/api', async (req, res, next) => {
+app.use("/api", async (req, res, next) => {
   try {
     await connectDB();
-
     return next();
-
   } catch (error) {
     console.error(
-      'MongoDB connection error:',
+      "MongoDB connection error:",
       error.message
     );
 
     return res.status(503).json({
       success: false,
-      message: 'Database connection failed. Please try again.'
+      message: "Database connection failed. Please try again."
     });
   }
 });
 
 // ==========================================
-// 11. API ROUTES
+// EXISTING API ROUTES
 // ==========================================
 
-app.use('/api/auth', authRoutes);
+app.use("/api/auth", authRoutes);
 
-app.use('/api/site-settings', siteSettingsRoutes);
+app.use("/api/site-settings", siteSettingsRoutes);
 
-app.use('/api/categories', categoryRoutes);
+app.use("/api/categories", categoryRoutes);
 
-app.use('/api/products', productRoutes);
+app.use("/api/products", productRoutes);
 
-app.use('/api/cart', cartRoutes);
+app.use("/api/cart", cartRoutes);
 
-app.use('/api/orders', orderRoutes);
+app.use("/api/orders", orderRoutes);
 
-app.use('/api/users', userRoutes);
+app.use("/api/users", userRoutes);
 
-app.use('/api/messages', messageRoutes);
+app.use("/api/messages", messageRoutes);
 
-app.use('/api/invites', inviteRoutes);
-
-// Includes:
-// GET  /api/payments/balance
-// POST /api/payments/monnify/initialize
-// GET  /api/payments/monnify/verify/:paymentReference
-// POST /api/payments/monnify/webhook
-
-app.use('/api/payments', paymentRoutes);
-
-app.use('/api/activities', activityRoutes);
-
-app.use('/api/dashboard', dashboardRoutes);
+app.use("/api/invites", inviteRoutes);
 
 // ==========================================
-// 12. MULTER CONFIGURATION
+// MONNIFY PAYMENT ROUTES
+// ==========================================
+
+app.use("/api/payments", paymentRoutes);
+
+// ==========================================
+// ACTIVITY AND DASHBOARD
+// ==========================================
+
+app.use("/api/activities", activityRoutes);
+
+app.use("/api/dashboard", dashboardRoutes);
+
+// ==========================================
+// BAILEYS WHATSAPP BOT API
+// ==========================================
+
+// Protected by BOT_API_SECRET in
+// whatsappBotRoutes.js.
+//
+// GET  /api/whatsapp/products
+// GET  /api/whatsapp/products/:id
+// GET  /api/whatsapp/categories
+// POST /api/whatsapp/orders
+// GET  /api/whatsapp/orders/:orderNumber
+
+app.use("/api/whatsapp", whatsappBotRoutes);
+
+// ==========================================
+// MULTER CONFIGURATION
 // ==========================================
 
 const upload = multer({
@@ -266,10 +263,10 @@ const upload = multer({
 
   fileFilter: (req, file, callback) => {
     const allowedMimeTypes = [
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-      'image/gif'
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif"
     ];
 
     if (allowedMimeTypes.includes(file.mimetype)) {
@@ -277,7 +274,7 @@ const upload = multer({
     } else {
       callback(
         new Error(
-          'Only JPEG, PNG, WEBP and GIF images are allowed.'
+          "Only JPEG, PNG, WEBP and GIF images are allowed."
         )
       );
     }
@@ -285,24 +282,24 @@ const upload = multer({
 });
 
 // ==========================================
-// 13. SECURED IMAGE UPLOAD
+// SECURED IMAGE UPLOAD
 // ==========================================
 
 app.post(
-  '/api/upload',
+  "/api/upload",
 
   protect,
 
-  requirePermission('manage_products'),
+  requirePermission("manage_products"),
 
-  upload.array('images', 10),
+  upload.array("images", 10),
 
   async (req, res) => {
     try {
       if (!req.files || req.files.length === 0) {
         return res.status(400).json({
           success: false,
-          message: 'No images uploaded.'
+          message: "No images uploaded."
         });
       }
 
@@ -313,26 +310,26 @@ app.post(
       ) {
         return res.status(500).json({
           success: false,
-          message: 'Cloudinary is not configured.'
+          message: "Cloudinary is not configured."
         });
       }
 
       const uploadPromises = req.files.map(file => {
         return new Promise((resolve, reject) => {
-          const uploadStream = cloudinary.uploader.upload_stream(
-            {
-              folder: 'products',
-              resource_type: 'image'
-            },
+          const uploadStream =
+            cloudinary.uploader.upload_stream(
+              {
+                folder: "products",
+                resource_type: "image"
+              },
+              (error, result) => {
+                if (error) {
+                  return reject(error);
+                }
 
-            (error, result) => {
-              if (error) {
-                return reject(error);
+                resolve(result.secure_url);
               }
-
-              resolve(result.secure_url);
-            }
-          );
+            );
 
           streamifier
             .createReadStream(file.buffer)
@@ -344,70 +341,61 @@ app.post(
 
       return res.status(200).json({
         success: true,
-        message: 'Images uploaded successfully.',
+        message: "Images uploaded successfully.",
         urls
       });
 
     } catch (error) {
-      console.error(
-        'Cloudinary upload error:',
-        error
-      );
+      console.error("Cloudinary upload error:", error);
 
       return res.status(500).json({
         success: false,
-        message: 'Image upload failed.'
+        message: "Image upload failed."
       });
     }
   }
 );
 
 // ==========================================
-// 14. DEMO USER SEEDING
+// DEMO USER SEEDING
 // ==========================================
 
 async function seedDemoUsers() {
-
-  // Never seed demo users in production.
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === "production") {
     console.log(
-      'Demo user seeding disabled in production.'
+      "Demo user seeding disabled in production."
     );
-
     return;
   }
 
   const demoAccounts = [
     {
-      name: 'DIVINE SOLAR HUB',
-      email: 'admin@email.com',
-      phone: '+23481100001',
-      password: 'admin123',
-      role: 'admin',
+      name: "DIVINE SOLAR HUB",
+      email: "admin@email.com",
+      phone: "+23481100001",
+      password: "admin123",
+      role: "admin",
       isVerified: true
     },
-
     {
-      name: 'Demo User',
-      email: 'user@divinesolarhub.com',
-      phone: '+2348000000002',
-      password: 'user123',
-      role: 'user',
+      name: "Demo User",
+      email: "user@divinesolarhub.com",
+      phone: "+2348000000002",
+      password: "user123",
+      role: "user",
       isVerified: true
     },
-
     {
-      name: 'Demo Sales Rep',
-      email: 'sales@divinesolarhub.com',
-      phone: '+2348000000003',
-      password: 'sales123',
-      role: 'sales_rep',
+      name: "Demo Sales Rep",
+      email: "sales@divinesolarhub.com",
+      phone: "+2348000000003",
+      password: "sales123",
+      role: "sales_rep",
       isVerified: true,
-
       permissions: [
-        'manage_products',
-        'manage_orders',
-        'manage_categories'
+        "manage_products",
+        "manage_orders",
+        "manage_categories"
       ]
     }
   ];
@@ -423,9 +411,7 @@ async function seedDemoUsers() {
 
       if (!exists) {
         await User.create(acc);
-
         console.log(`Seeded: ${acc.email}`);
-
       } else {
         console.log(`Skipped: ${acc.email}`);
       }
@@ -440,26 +426,23 @@ async function seedDemoUsers() {
 }
 
 // ==========================================
-// 15. 404 HANDLER
+// 404 HANDLER
 // ==========================================
 
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: 'API route not found.',
+    message: "API route not found.",
     path: req.originalUrl
   });
 });
 
 // ==========================================
-// 16. GLOBAL ERROR HANDLER
+// GLOBAL ERROR HANDLER
 // ==========================================
 
 app.use((err, req, res, next) => {
-  console.error(
-    'Server Error:',
-    err.message
-  );
+  console.error("Server Error:", err.message);
 
   if (err instanceof multer.MulterError) {
     return res.status(400).json({
@@ -468,59 +451,53 @@ app.use((err, req, res, next) => {
     });
   }
 
-  if (err.message?.startsWith('Only JPEG')) {
+  if (err.message?.startsWith("Only JPEG")) {
     return res.status(400).json({
       success: false,
       message: err.message
     });
   }
 
-  if (err.message === 'Not allowed by CORS') {
+  if (err.message === "Not allowed by CORS") {
     return res.status(403).json({
       success: false,
-      message: 'Origin not allowed by CORS.'
+      message: "Origin not allowed by CORS."
     });
   }
 
   return res.status(500).json({
     success: false,
-    message: 'Internal server error.'
+    message: "Internal server error."
   });
 });
 
 // ==========================================
-// 17. LOCAL DEVELOPMENT SERVER
+// LOCAL DEVELOPMENT SERVER
 // ==========================================
 
 const PORT = process.env.PORT || 5000;
 
 async function startServer() {
   try {
-    // Connect to MongoDB first.
     await connectDB();
 
-    console.log('MongoDB connected successfully.');
+    console.log("MongoDB connected successfully.");
 
-    // Seed demo accounts in development.
     await seedDemoUsers();
 
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log('====================================');
-
-      console.log('DIVINE SOLAR HUB API STARTED');
-
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log("====================================");
+      console.log("DIVINE SOLAR HUB API STARTED");
       console.log(`PORT: ${PORT}`);
-
       console.log(
-        `ENV: ${process.env.NODE_ENV || 'development'}`
+        `ENV: ${process.env.NODE_ENV || "development"}`
       );
-
-      console.log('====================================');
+      console.log("====================================");
     });
 
   } catch (error) {
     console.error(
-      'Server startup failed:',
+      "Server startup failed:",
       error.message
     );
 
@@ -529,11 +506,8 @@ async function startServer() {
 }
 
 // ==========================================
-// 18. VERCEL + LOCAL COMPATIBILITY
+// VERCEL + LOCAL COMPATIBILITY
 // ==========================================
-
-// Vercel handles the Express application as a
-// serverless function. Do not start app.listen() there.
 
 if (!process.env.VERCEL) {
   startServer();

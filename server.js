@@ -1,6 +1,4 @@
 
-// server.js
-
 import "dotenv/config";
 
 import express from "express";
@@ -13,7 +11,7 @@ import connectDB from "./config/db.js";
 import User from "./models/User.js";
 
 // ==========================================
-// EXISTING ROUTES
+// ROUTES
 // ==========================================
 
 import authRoutes from "./routes/authRoutes.js";
@@ -28,11 +26,6 @@ import inviteRoutes from "./routes/inviteRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import activityRoutes from "./routes/activityRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
-
-// ==========================================
-// WHATSAPP BOT ROUTES
-// ==========================================
-
 import whatsappBotRoutes from "./routes/whatsappBotRoutes.js";
 
 import {
@@ -41,7 +34,7 @@ import {
 } from "./middleware/authMiddleware.js";
 
 // ==========================================
-// EXPRESS INITIALIZATION
+// EXPRESS
 // ==========================================
 
 const app = express();
@@ -49,7 +42,7 @@ const app = express();
 app.disable("x-powered-by");
 
 // ==========================================
-// ROOT ENDPOINT
+// ROOT
 // ==========================================
 
 app.get("/", (req, res) => {
@@ -61,7 +54,7 @@ app.get("/", (req, res) => {
 });
 
 // ==========================================
-// CLOUDINARY CONFIGURATION
+// CLOUDINARY
 // ==========================================
 
 cloudinary.config({
@@ -72,7 +65,7 @@ cloudinary.config({
 });
 
 // ==========================================
-// CORS CONFIGURATION
+// CORS
 // ==========================================
 
 const allowedOrigins = [
@@ -95,38 +88,30 @@ const envOrigins = process.env.CORS_ORIGIN
       .filter(Boolean)
   : [];
 
-const allAllowedOrigins = [
-  ...new Set([
-    ...allowedOrigins,
-    ...envOrigins
-  ])
-];
+const allAllowedOrigins = new Set([
+  ...allowedOrigins,
+  ...envOrigins
+]);
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests without an Origin header,
-    // such as server-to-server requests and health checks.
     if (!origin) {
       return callback(null, true);
     }
 
-    const isAllowed =
-      allAllowedOrigins.includes(origin);
+    const isAllowed = allAllowedOrigins.has(origin);
 
-    // Only allow Vercel preview URLs when explicitly enabled.
-    const isVercel =
+    const isVercelPreview =
       process.env.ALLOW_VERCEL_ORIGINS === "true" &&
       /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin);
 
-    if (isAllowed || isVercel) {
+    if (isAllowed || isVercelPreview) {
       return callback(null, true);
     }
 
     console.warn("CORS blocked:", origin);
 
-    return callback(
-      new Error("Not allowed by CORS")
-    );
+    return callback(new Error("Not allowed by CORS"));
   },
 
   credentials: true,
@@ -155,23 +140,17 @@ app.use(cors(corsOptions));
 // BODY PARSERS
 // ==========================================
 
-// Preserve the original request body for
-// Monnify webhook signature verification.
-//
-// IMPORTANT:
-// This middleware must run before paymentRoutes.
+// Preserve Monnify's original webhook body.
 
 app.use(express.json({
-  limit: "10mb",
+  limit: "1mb",
 
   verify: (req, res, buffer) => {
-    const requestPath =
-      req.originalUrl?.split("?")[0];
+    const requestPath = req.originalUrl?.split("?")[0];
 
-    const isMonnifyWebhook =
-      requestPath === "/api/payments/monnify/webhook";
-
-    if (isMonnifyWebhook) {
+    if (
+      requestPath === "/api/payments/monnify/webhook"
+    ) {
       req.rawBody = Buffer.from(buffer);
     }
   }
@@ -179,7 +158,7 @@ app.use(express.json({
 
 app.use(express.urlencoded({
   extended: true,
-  limit: "10mb"
+  limit: "1mb"
 }));
 
 // ==========================================
@@ -196,13 +175,13 @@ app.get("/api/health", (req, res) => {
 });
 
 // ==========================================
-// DATABASE CONNECTION
+// DATABASE MIDDLEWARE
 // ==========================================
 
 app.use("/api", async (req, res, next) => {
   try {
     await connectDB();
-    return next();
+    next();
   } catch (error) {
     console.error(
       "MongoDB connection error:",
@@ -217,7 +196,7 @@ app.use("/api", async (req, res, next) => {
 });
 
 // ==========================================
-// EXISTING API ROUTES
+// API ROUTES
 // ==========================================
 
 app.use("/api/auth", authRoutes);
@@ -238,36 +217,21 @@ app.use("/api/messages", messageRoutes);
 
 app.use("/api/invites", inviteRoutes);
 
-// ==========================================
-// MONNIFY PAYMENT ROUTES
-// ==========================================
-
 app.use("/api/payments", paymentRoutes);
-
-// ==========================================
-// ACTIVITY AND DASHBOARD
-// ==========================================
 
 app.use("/api/activities", activityRoutes);
 
 app.use("/api/dashboard", dashboardRoutes);
 
 // ==========================================
-// BAILEYS WHATSAPP BOT API
+// WHATSAPP BOT
+// PRESERVED - NO CHANGES
 // ==========================================
-
-// Protected by BOT_API_SECRET in whatsappBotRoutes.js.
-//
-// GET  /api/whatsapp/products
-// GET  /api/whatsapp/products/:id
-// GET  /api/whatsapp/categories
-// POST /api/whatsapp/orders
-// GET  /api/whatsapp/orders/:orderNumber
 
 app.use("/api/whatsapp", whatsappBotRoutes);
 
 // ==========================================
-// MULTER CONFIGURATION
+// MULTER
 // ==========================================
 
 const upload = multer({
@@ -299,21 +263,18 @@ const upload = multer({
 });
 
 // ==========================================
-// SECURED IMAGE UPLOAD
+// CLOUDINARY UPLOAD
 // ==========================================
 
 app.post(
   "/api/upload",
-
   protect,
-
   requirePermission("manage_products"),
-
   upload.array("images", 10),
 
   async (req, res) => {
     try {
-      if (!req.files || req.files.length === 0) {
+      if (!req.files?.length) {
         return res.status(400).json({
           success: false,
           message: "No images uploaded."
@@ -331,7 +292,10 @@ app.post(
         });
       }
 
-      const uploadPromises = req.files.map(file => {
+      // Limit simultaneous uploads to avoid
+      // overwhelming the server or Cloudinary.
+
+      const uploadImage = file => {
         return new Promise((resolve, reject) => {
           const uploadStream =
             cloudinary.uploader.upload_stream(
@@ -352,9 +316,19 @@ app.post(
             .createReadStream(file.buffer)
             .pipe(uploadStream);
         });
-      });
+      };
 
-      const urls = await Promise.all(uploadPromises);
+      const urls = [];
+
+      for (let i = 0; i < req.files.length; i += 3) {
+        const batch = req.files.slice(i, i + 3);
+
+        const batchUrls = await Promise.all(
+          batch.map(uploadImage)
+        );
+
+        urls.push(...batchUrls);
+      }
 
       return res.status(200).json({
         success: true,
@@ -363,7 +337,10 @@ app.post(
       });
 
     } catch (error) {
-      console.error("Cloudinary upload error:", error);
+      console.error(
+        "Cloudinary upload error:",
+        error.message
+      );
 
       return res.status(500).json({
         success: false,
@@ -429,7 +406,6 @@ async function seedDemoUsers() {
 
       if (!exists) {
         await User.create(acc);
-
         console.log(`Seeded: ${acc.email}`);
       } else {
         console.log(`Skipped: ${acc.email}`);
@@ -445,7 +421,7 @@ async function seedDemoUsers() {
 }
 
 // ==========================================
-// 404 HANDLER
+// 404
 // ==========================================
 
 app.use((req, res) => {

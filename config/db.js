@@ -1,5 +1,5 @@
 
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 // ==========================================
 // MONGODB CONNECTION CACHE
@@ -12,34 +12,62 @@ const cached =
     promise: null
   });
 
+// ==========================================
+// CONNECTION CONFIGURATION
+// ==========================================
+
+const connectionOptions = {
+  serverSelectionTimeoutMS: 10000,
+
+  // Connection pool
+  maxPoolSize: 10,
+  minPoolSize: 0,
+
+  // Avoid unnecessary buffering
+  bufferCommands: false,
+
+  // Keep connections healthy
+  socketTimeoutMS: 45000,
+
+  // Faster detection of inactive connections
+  heartbeatFrequencyMS: 10000
+};
+
+// ==========================================
+// DATABASE CONNECTION
+// ==========================================
+
 const connectDB = async () => {
   const MONGO_URI = process.env.MONGO_URI;
 
-  // Check environment configuration
   if (!MONGO_URI) {
-    throw new Error('MONGO_URI environment variable is not defined.');
+    throw new Error(
+      "MONGO_URI environment variable is not defined."
+    );
   }
 
-  // Reuse an existing connection
+  // Already connected
   if (mongoose.connection.readyState === 1) {
     return mongoose.connection;
   }
 
-  // Reuse an ongoing connection attempt
-  if (mongoose.connection.readyState === 2 && cached.promise) {
+  // Connection already in progress
+  if (
+    mongoose.connection.readyState === 2 &&
+    cached.promise
+  ) {
     return cached.promise;
   }
 
-  // Reset stale connection promise
+  // Disconnected or stale connection
   if (mongoose.connection.readyState === 0) {
     cached.promise = null;
   }
 
-  // Establish a new connection
+  // Create one shared connection attempt
   if (!cached.promise) {
-    cached.promise = mongoose.connect(MONGO_URI, {
-      serverSelectionTimeoutMS: 10000,
-    })
+    cached.promise = mongoose
+      .connect(MONGO_URI, connectionOptions)
       .then(() => {
         console.log(
           `MongoDB Connected: ${mongoose.connection.host}`
@@ -47,11 +75,11 @@ const connectDB = async () => {
 
         return mongoose.connection;
       })
-      .catch((error) => {
+      .catch(error => {
         cached.promise = null;
 
         console.error(
-          'MongoDB connection failed:',
+          "MongoDB connection failed:",
           error.message
         );
 
@@ -61,5 +89,28 @@ const connectDB = async () => {
 
   return cached.promise;
 };
+
+// ==========================================
+// CONNECTION EVENT HANDLERS
+// ==========================================
+
+mongoose.connection.on("disconnected", () => {
+  console.warn("MongoDB disconnected.");
+});
+
+mongoose.connection.on("reconnected", () => {
+  console.log("MongoDB reconnected.");
+});
+
+mongoose.connection.on("error", error => {
+  console.error(
+    "MongoDB connection error:",
+    error.message
+  );
+});
+
+// ==========================================
+// EXPORT
+// ==========================================
 
 export default connectDB;

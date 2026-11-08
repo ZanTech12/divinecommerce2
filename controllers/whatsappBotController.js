@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 import crypto from "crypto";
 
@@ -30,26 +29,44 @@ const getProductPrice = (product) => {
   return price;
 };
 
+// Only expose approved public product fields.
+// engineeringPrice and assignedSalesRep are never exposed.
+
 const publicProduct = (product) => ({
   _id: product._id,
   name: product.name,
   description: product.description,
   price: getProductPrice(product),
   originalPrice: product.price,
-  image: product.image,
-  images: product.images,
+  image: product.image || "",
+  images: product.images || [],
   category: product.category,
-  brand: product.brand,
-  sku: product.sku,
+  brand: product.brand || "",
+  sku: product.sku || "",
+  tags: product.tags || [],
   countInStock: product.countInStock,
-  isFeatured: product.isFeatured,
-  isNewArrival: product.isNewArrival,
-  isFlashSale: product.isFlashSale
+  rating: product.rating || 0,
+  numReviews: product.numReviews || 0,
+  isFeatured: product.isFeatured || false,
+  isNewArrival: product.isNewArrival || false,
+  isFlashSale: product.isFlashSale || false
 });
+
+const productPublicFields =
+  "name description price discountPrice image images category brand sku tags countInStock rating numReviews isFeatured isNewArrival isFlashSale";
 
 // ==========================================
 // 1. SEARCH PRODUCTS
-// GET /api/whatsapp/products?search=solar
+//
+// GET /api/whatsapp/products
+//
+// Examples:
+// ?search=solar
+// ?search=inverter
+// ?search=5000VA
+// ?category=Solar Panels
+// ?page=1&limit=10
+// ?search=battery&category=Solar Batteries
 // ==========================================
 
 export const searchProducts = async (req, res) => {
@@ -57,16 +74,23 @@ export const searchProducts = async (req, res) => {
     const search = String(req.query.search || "").trim();
     const category = String(req.query.category || "").trim();
 
-    const page = Math.max(1, Number(req.query.page) || 1);
-    const limit = Math.min(
-      20,
-      Math.max(1, Number(req.query.limit) || 10)
-    );
+    const requestedPage = Number(req.query.page);
+    const requestedLimit = Number(req.query.limit);
 
+    const page = Number.isFinite(requestedPage)
+      ? Math.max(1, Math.floor(requestedPage))
+      : 1;
+
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(50, Math.max(1, Math.floor(requestedLimit)))
+      : 10;
+
+    // Only active products are available to customers.
     const filter = {
       isActive: true
     };
 
+    // Search actual MongoDB product fields.
     if (search) {
       const regex = new RegExp(escapeRegex(search), "i");
 
@@ -80,6 +104,7 @@ export const searchProducts = async (req, res) => {
       ];
     }
 
+    // Exact category matching, case-insensitive.
     if (category) {
       filter.category = new RegExp(
         `^${escapeRegex(category)}$`,
@@ -89,10 +114,11 @@ export const searchProducts = async (req, res) => {
 
     const [products, total] = await Promise.all([
       Product.find(filter)
-        .select(
-          "name description price discountPrice image images category brand sku countInStock isFeatured isNewArrival isFlashSale"
-        )
-        .sort({ isFeatured: -1, createdAt: -1 })
+        .select(productPublicFields)
+        .sort({
+          isFeatured: -1,
+          createdAt: -1
+        })
         .skip((page - 1) * limit)
         .limit(limit)
         .lean(),
@@ -100,16 +126,20 @@ export const searchProducts = async (req, res) => {
       Product.countDocuments(filter)
     ]);
 
-    return res.json({
+    return res.status(200).json({
       success: true,
       total,
       page,
+      limit,
       pages: Math.ceil(total / limit),
       products: products.map(publicProduct)
     });
 
   } catch (error) {
-    console.error("WhatsApp product search:", error);
+    console.error(
+      "WhatsApp product search:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -120,6 +150,7 @@ export const searchProducts = async (req, res) => {
 
 // ==========================================
 // 2. GET PRODUCT DETAILS
+//
 // GET /api/whatsapp/products/:id
 // ==========================================
 
@@ -138,9 +169,7 @@ export const getProductDetails = async (req, res) => {
       _id: id,
       isActive: true
     })
-      .select(
-        "name description price discountPrice image images category brand sku countInStock"
-      )
+      .select(productPublicFields)
       .lean();
 
     if (!product) {
@@ -150,13 +179,16 @@ export const getProductDetails = async (req, res) => {
       });
     }
 
-    return res.json({
+    return res.status(200).json({
       success: true,
       product: publicProduct(product)
     });
 
   } catch (error) {
-    console.error("WhatsApp product details:", error);
+    console.error(
+      "WhatsApp product details:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -167,24 +199,51 @@ export const getProductDetails = async (req, res) => {
 
 // ==========================================
 // 3. GET PRODUCT CATEGORIES
+//
 // GET /api/whatsapp/categories
+//
+// Categories come directly from MongoDB.
+// No hardcoded category names.
 // ==========================================
 
 export const getCategories = async (req, res) => {
   try {
-    const categories = await Product.distinct("category", {
-      isActive: true
-    });
+    const categories = await Product.distinct(
+      "category",
+      {
+        isActive: true
+      }
+    );
 
-    return res.json({
+    const cleanCategories = categories
+      .filter(
+        category =>
+          typeof category === "string" &&
+          category.trim() !== ""
+      )
+      .map(category => category.trim());
+
+    // Remove duplicate names ignoring letter case.
+    const uniqueCategories = [
+      ...new Map(
+        cleanCategories.map(category => [
+          category.toLowerCase(),
+          category
+        ])
+      ).values()
+    ].sort((a, b) => a.localeCompare(b));
+
+    return res.status(200).json({
       success: true,
-      categories: categories
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b))
+      total: uniqueCategories.length,
+      categories: uniqueCategories
     });
 
   } catch (error) {
-    console.error("WhatsApp categories:", error);
+    console.error(
+      "WhatsApp categories:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -195,6 +254,7 @@ export const getCategories = async (req, res) => {
 
 // ==========================================
 // 4. CREATE WHATSAPP GUEST ORDER
+//
 // POST /api/whatsapp/orders
 // ==========================================
 
@@ -207,6 +267,7 @@ export const createWhatsAppOrder = async (req, res) => {
       notes
     } = req.body;
 
+    // Validate order items.
     if (
       !Array.isArray(items) ||
       items.length === 0 ||
@@ -225,6 +286,7 @@ export const createWhatsAppOrder = async (req, res) => {
       });
     }
 
+    // Validate required delivery information.
     const requiredFields = [
       "fullName",
       "street",
@@ -236,7 +298,9 @@ export const createWhatsAppOrder = async (req, res) => {
     ];
 
     for (const field of requiredFields) {
-      if (!String(shippingAddress[field] || "").trim()) {
+      if (
+        !String(shippingAddress[field] || "").trim()
+      ) {
         return res.status(400).json({
           success: false,
           message: `${field} is required`
@@ -244,11 +308,14 @@ export const createWhatsAppOrder = async (req, res) => {
       }
     }
 
+    // Verify customer phone against WhatsApp sender.
     const customerPhone = normalizePhone(
       shippingAddress.phone
     );
 
-    const senderPhone = normalizePhone(whatsappPhone);
+    const senderPhone = normalizePhone(
+      whatsappPhone
+    );
 
     if (
       !customerPhone ||
@@ -276,7 +343,10 @@ export const createWhatsAppOrder = async (req, res) => {
     const quantities = new Map();
 
     for (const item of items) {
-      const productId = String(item.productId || "");
+      const productId = String(
+        item.productId || ""
+      );
+
       const quantity = Number(item.quantity);
 
       if (
@@ -297,7 +367,8 @@ export const createWhatsAppOrder = async (req, res) => {
       if (newQuantity > 100) {
         return res.status(400).json({
           success: false,
-          message: "Maximum quantity per product is 100"
+          message:
+            "Maximum quantity per product is 100"
         });
       }
 
@@ -306,8 +377,12 @@ export const createWhatsAppOrder = async (req, res) => {
 
     const productIds = [...quantities.keys()];
 
+    // Retrieve real products from MongoDB.
+    // Never trust prices or names sent by WhatsApp.
     const products = await Product.find({
-      _id: { $in: productIds },
+      _id: {
+        $in: productIds
+      },
       isActive: true
     }).select(
       "name price discountPrice image sku countInStock"
@@ -316,7 +391,8 @@ export const createWhatsAppOrder = async (req, res) => {
     if (products.length !== productIds.length) {
       return res.status(400).json({
         success: false,
-        message: "One or more products are unavailable"
+        message:
+          "One or more products are unavailable"
       });
     }
 
@@ -328,13 +404,16 @@ export const createWhatsAppOrder = async (req, res) => {
         product._id.toString()
       );
 
+      // Validate available stock.
       if (product.countInStock < quantity) {
         return res.status(400).json({
           success: false,
-          message: `${product.name} does not have enough stock. Available: ${product.countInStock}`
+          message:
+            `${product.name} does not have enough stock. Available: ${product.countInStock}`
         });
       }
 
+      // Always calculate price from the database.
       const price = getProductPrice(product);
 
       subtotal += price * quantity;
@@ -346,13 +425,15 @@ export const createWhatsAppOrder = async (req, res) => {
         quantity,
         price,
         discountPrice:
-          price < product.price ? price : undefined,
+          price < product.price
+            ? price
+            : undefined,
         sku: product.sku
       });
     }
 
-    // These are placeholders until your existing
-    // shipping and tax calculation rules are connected.
+    // Placeholders until existing shipping and tax
+    // calculation rules are connected.
     const shippingCost = 0;
     const tax = 0;
     const discount = 0;
@@ -360,39 +441,70 @@ export const createWhatsAppOrder = async (req, res) => {
     const totalAmount =
       subtotal + shippingCost + tax - discount;
 
-    if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
+    if (
+      !Number.isFinite(totalAmount) ||
+      totalAmount <= 0
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid order amount"
       });
     }
 
-    const orderNumber =
-      `DSH-${Date.now()}-${crypto.randomBytes(3)
-        .toString("hex")}`.toUpperCase();
+    const orderNumber = (
+      `DSH-${Date.now()}-${crypto
+        .randomBytes(3)
+        .toString("hex")}`
+    ).toUpperCase();
 
+    // Create guest order.
     const order = await Order.create({
       orderNumber,
 
       user: null,
 
-      guestEmail: shippingAddress.email || undefined,
+      guestEmail:
+        shippingAddress.email || undefined,
 
-      // Save the WhatsApp number separately for notifications.
       whatsappPhone: customerPhone,
 
       items: orderItems,
 
       shippingAddress: {
-        fullName: String(shippingAddress.fullName).trim(),
-        street: String(shippingAddress.street).trim(),
-        apartment: String(shippingAddress.apartment || "").trim(),
-        city: String(shippingAddress.city).trim(),
-        state: String(shippingAddress.state).trim(),
-        zipCode: String(shippingAddress.zipCode).trim(),
-        country: String(shippingAddress.country).trim(),
-        phone: String(shippingAddress.phone).trim(),
-        email: shippingAddress.email || undefined
+        fullName: String(
+          shippingAddress.fullName
+        ).trim(),
+
+        street: String(
+          shippingAddress.street
+        ).trim(),
+
+        apartment: String(
+          shippingAddress.apartment || ""
+        ).trim(),
+
+        city: String(
+          shippingAddress.city
+        ).trim(),
+
+        state: String(
+          shippingAddress.state
+        ).trim(),
+
+        zipCode: String(
+          shippingAddress.zipCode
+        ).trim(),
+
+        country: String(
+          shippingAddress.country
+        ).trim(),
+
+        phone: String(
+          shippingAddress.phone
+        ).trim(),
+
+        email:
+          shippingAddress.email || undefined
       },
 
       subtotal,
@@ -411,13 +523,19 @@ export const createWhatsAppOrder = async (req, res) => {
 
       notes: [
         "Order created through Divine Solar Hub WhatsApp.",
-        notes ? String(notes).slice(0, 500) : ""
-      ].filter(Boolean).join(" ")
+        notes
+          ? String(notes).slice(0, 500)
+          : ""
+      ]
+        .filter(Boolean)
+        .join(" ")
     });
 
     return res.status(201).json({
       success: true,
-      message: "WhatsApp order created successfully",
+      message:
+        "WhatsApp order created successfully",
+
       order: {
         _id: order._id,
         orderNumber: order.orderNumber,
@@ -433,7 +551,10 @@ export const createWhatsAppOrder = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("WhatsApp order creation:", error);
+    console.error(
+      "WhatsApp order creation:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -444,6 +565,7 @@ export const createWhatsAppOrder = async (req, res) => {
 
 // ==========================================
 // 5. TRACK WHATSAPP ORDER
+//
 // GET /api/whatsapp/orders/:orderNumber
 // ==========================================
 
@@ -451,7 +573,9 @@ export const trackWhatsAppOrder = async (req, res) => {
   try {
     const orderNumber = String(
       req.params.orderNumber || ""
-    ).trim().toUpperCase();
+    )
+      .trim()
+      .toUpperCase();
 
     const whatsappPhone = normalizePhone(
       req.query.whatsappPhone
@@ -460,7 +584,8 @@ export const trackWhatsAppOrder = async (req, res) => {
     if (!orderNumber || !whatsappPhone) {
       return res.status(400).json({
         success: false,
-        message: "Order number and WhatsApp phone are required"
+        message:
+          "Order number and WhatsApp phone are required"
       });
     }
 
@@ -477,9 +602,10 @@ export const trackWhatsAppOrder = async (req, res) => {
       });
     }
 
-    // Support older orders that may not have whatsappPhone saved.
+    // Support older orders without whatsappPhone.
     const savedPhone = normalizePhone(
-      order.whatsappPhone || order.shippingAddress?.phone
+      order.whatsappPhone ||
+      order.shippingAddress?.phone
     );
 
     if (savedPhone !== whatsappPhone) {
@@ -490,14 +616,17 @@ export const trackWhatsAppOrder = async (req, res) => {
       });
     }
 
-    return res.json({
+    return res.status(200).json({
       success: true,
+
       order: {
         orderNumber: order.orderNumber,
+
         items: order.items.map(item => ({
           name: item.name,
           quantity: item.quantity
         })),
+
         subtotal: order.subtotal,
         shippingCost: order.shippingCost,
         totalAmount: order.totalAmount,
@@ -510,7 +639,10 @@ export const trackWhatsAppOrder = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("WhatsApp order tracking:", error);
+    console.error(
+      "WhatsApp order tracking:",
+      error
+    );
 
     return res.status(500).json({
       success: false,

@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 import crypto from "crypto";
 
@@ -13,6 +14,36 @@ const normalizePhone = (phone = "") =>
 
 const escapeRegex = (value = "") =>
   String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Create a regex that supports common singular/plural forms.
+// Solar Panel -> Solar Panels
+// Solar Panels -> Solar Panel
+const createFlexibleWordRegex = (word = "") => {
+  const escaped = escapeRegex(
+    String(word).trim()
+  );
+
+  if (!escaped) return null;
+
+  let pattern = escaped;
+
+  if (
+    escaped.toLowerCase().endsWith("ies") &&
+    escaped.length > 3
+  ) {
+    pattern = `${escaped.slice(0, -3)}(?:y|ies)`;
+  } else if (
+    escaped.toLowerCase().endsWith("s") &&
+    !escaped.toLowerCase().endsWith("ss") &&
+    escaped.length > 3
+  ) {
+    pattern = `${escaped.slice(0, -1)}s?`;
+  } else if (escaped.length > 2) {
+    pattern = `${escaped}s?`;
+  }
+
+  return new RegExp(pattern, "i");
+};
 
 const getProductPrice = (product) => {
   const price = Number(product.price);
@@ -64,6 +95,7 @@ const productPublicFields =
 // ?search=solar
 // ?search=inverter
 // ?search=5000VA
+// ?search=Solar Panels
 // ?category=Solar Panels
 // ?page=1&limit=10
 // ?search=battery&category=Solar Batteries
@@ -71,8 +103,13 @@ const productPublicFields =
 
 export const searchProducts = async (req, res) => {
   try {
-    const search = String(req.query.search || "").trim();
-    const category = String(req.query.category || "").trim();
+    const search = String(
+      req.query.search || ""
+    ).trim();
+
+    const category = String(
+      req.query.category || ""
+    ).trim();
 
     const requestedPage = Number(req.query.page);
     const requestedLimit = Number(req.query.limit);
@@ -90,27 +127,69 @@ export const searchProducts = async (req, res) => {
       isActive: true
     };
 
-    // Search actual MongoDB product fields.
+    // ======================================
+    // FLEXIBLE PRODUCT SEARCH
+    // ======================================
+
     if (search) {
-      const regex = new RegExp(escapeRegex(search), "i");
+      const words = search
+        .split(/\s+/)
+        .filter(Boolean);
 
-      filter.$or = [
-        { name: regex },
-        { description: regex },
-        { brand: regex },
-        { category: regex },
-        { sku: regex },
-        { tags: regex }
+      const searchFields = [
+        "name",
+        "description",
+        "brand",
+        "category",
+        "sku",
+        "tags"
       ];
+
+      // Every search word must match at least
+      // one searchable product field.
+      filter.$and = words.map((word) => {
+        const regex = createFlexibleWordRegex(word);
+
+        return {
+          $or: searchFields.map((field) => ({
+            [field]: regex
+          }))
+        };
+      });
     }
 
-    // Exact category matching, case-insensitive.
+    // ======================================
+    // FLEXIBLE CATEGORY FILTER
+    // ======================================
+
     if (category) {
-      filter.category = new RegExp(
-        `^${escapeRegex(category)}$`,
-        "i"
+      const words = category
+        .split(/\s+/)
+        .filter(Boolean);
+
+      const categoryConditions = words.map(
+        (word) => ({
+          category: createFlexibleWordRegex(word)
+        })
       );
+
+      if (categoryConditions.length === 1) {
+        filter.category = categoryConditions[0].category;
+      } else if (categoryConditions.length > 1) {
+        // If search conditions already exist,
+        // preserve them while adding category matching.
+        filter.$and = [
+          ...(filter.$and || []),
+          {
+            $and: categoryConditions
+          }
+        ];
+      }
     }
+
+    // ======================================
+    // DATABASE QUERY
+    // ======================================
 
     const [products, total] = await Promise.all([
       Product.find(filter)
@@ -125,6 +204,15 @@ export const searchProducts = async (req, res) => {
 
       Product.countDocuments(filter)
     ]);
+
+    console.log("WhatsApp product search:", {
+      search,
+      category,
+      page,
+      limit,
+      total,
+      returned: products.length
+    });
 
     return res.status(200).json({
       success: true,
@@ -432,8 +520,7 @@ export const createWhatsAppOrder = async (req, res) => {
       });
     }
 
-    // Placeholders until existing shipping and tax
-    // calculation rules are connected.
+    // Existing shipping and tax placeholders.
     const shippingCost = 0;
     const tax = 0;
     const discount = 0;
